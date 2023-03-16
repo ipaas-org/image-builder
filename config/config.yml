@@ -1,10 +1,8 @@
 app:
-  name: "service-template"
-  version: "1.0.0"
+  name: "image-builder"
+  version: "0.0.1"
 
-http:
-  port: "8080"
-  jwtSecret: "secret"
+RMQ:
 
 logger:
   level: "debug"
@@ -13,11 +11,10 @@ logger:
 database:
   driver: "mock"
 
-#database:
-#  driver: "mongo"
-#  uri: "..."
-
 services:
-  logo:
-    base_url: "https://logo.example.com"
-    api_key: "aSuperSecretKey"
+  downloaders:
+    - name: github
+      downloadDirectory: "./tmp"
+  builders:
+    - name: nixpacks
+      registryUri: "registry.example.com"
