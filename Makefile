@@ -18,12 +18,7 @@ help: ## Display this help screen
 # 	docker-compose down --remove-orphans
 # .PHONY: compose-down
 
-swag: ### swag init
-	swag init -g handlers/httpserver/router.go
-.PHONY: swag
-
-
-run: fmt swag ### regenerate swag docs, check module and run go code
+run: fmt ### regenerate swag docs, check module and run go code
 	go mod tidy
 	go mod download
 	go run .
@@ -39,18 +34,18 @@ lint: ### check by golangci linter
 .PHONY: linter-golangci
 
 test: ### run test
-	go test -v github.com/vano2903/service-template/controller/tests
+	go test -v ./... 
 .PHONY: test
 
 update: ### update dependencies
-	go get -u
 	go mod tidy
+	go get -u
 .PHONY: update
 
 docker: ### build and run docker image
-	docker build -t service-template .
+	docker build -t image-builder .
 	docker run -p 8080:8080 service-template
 .PHONY: docker
 
-prep: fmt swag lint test ### run all checks before commit
+prep: fmt lint test ### run all checks before commit
 .PHONY: prep
