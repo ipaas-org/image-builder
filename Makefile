@@ -34,6 +34,10 @@ lint: ### check by golangci linter
 .PHONY: linter-golangci
 
 test: ### run test
+	go test  ./... 
+.PHONY: test
+
+testv: ### run verbose test
 	go test -v ./... 
 .PHONY: test
 
