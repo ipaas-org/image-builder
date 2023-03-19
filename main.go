@@ -1,17 +1,17 @@
 package main
 
 import (
+	"fmt"
 	"log"
 
 	"github.com/labstack/echo/v4"
-	"github.com/sirupsen/logrus"
-	"github.com/vano2903/service-template/config"
-	"github.com/vano2903/service-template/controller"
-	"github.com/vano2903/service-template/handlers/httpserver"
-	"github.com/vano2903/service-template/model"
-	"github.com/vano2903/service-template/pkg/logger"
-	"github.com/vano2903/service-template/providers/logo"
-	"github.com/vano2903/service-template/repo/mock"
+	"github.com/vano2903/image-builder/config"
+	"github.com/vano2903/image-builder/controller"
+	"github.com/vano2903/image-builder/model"
+	"github.com/vano2903/image-builder/pkg/logger"
+	"github.com/vano2903/image-builder/providers/builders/nixpacks"
+	"github.com/vano2903/image-builder/providers/connectors/github"
+	// "github.com/vano2903/image-builder/repo/mock"
 )
 
 func main() {
@@ -23,35 +23,53 @@ func main() {
 	l := logger.NewLogger(conf.Log.Level, conf.Log.Type)
 	l.Debug("initizalized logger")
 
-	if conf.Database.Driver != "mock" {
-		log.Fatal("only mock database is supported in this example")
-	}
+	// if conf.Database.Driver != "mock" {
+	// 	log.Fatal("only mock database is supported in this example")
+	// }
 
-	//creating the instances for the application
-	repo := mock.NewRepo()
-	logoService := logo.NewServiceLogo(conf.Services.Logo.ApiKey, conf.Services.Logo.BaseUrl)
+	// //creating the instances for the application
+	// repo := mock.NewRepo()
 
 	//creating the controller
-	c := controller.NewUserController(repo, logoService, l)
+	c := controller.NewBuilderController(l)
 
-	GenerateExampleEntries(l, c)
+	l.Info(conf)
+	for _, providerInfo := range conf.Services.Connectors {
+		switch providerInfo.Name {
+		case model.ConnectorGithub:
+			g := github.NewGithubConnector(providerInfo.DownloadDirectory, fmt.Sprintf("ipaas-%s-%s", conf.App.Name, conf.App.Version), "", l)
+			c.AddConnector(model.ConnectorGithub, g)
+			l.Infof("succesfully added %s as downloader", providerInfo.Name)
+
+		default:
+			l.Errorf("provider %s not supported", providerInfo.Name)
+		}
+	}
+
+	if len(conf.Services.Builders) == 0 {
+		log.Fatal("no builders specified")
+	}
+
+	if conf.Services.Builders[0].Name != model.DownloaderNixpacks {
+		log.Fatal("only nixpacks builder is supported in the app version:", conf.App.Version)
+	}
+
+	nix := nixpacks.NewNixPackBuilder(conf.Services.Builders[0].RegistryUri)
+
+	c.AddBuilder(model.DownloaderNixpacks, nix)
 
 	//creating the http server
 	e := echo.New()
-	httpserver.InitRouter(e, l, c, conf)
 
 	//starting the server
-	e.Logger.Fatal(e.Start(":" + conf.HTTP.Port))
+	e.Logger.Fatal(e.Start(":" + "8080")) //conf.HTTP.Port))
 }
 
-func GenerateExampleEntries(l *logrus.Logger, c *controller.User) {
-	if _, err := c.CreateUser("Davide", "Vanoncini", "davidevanoncini2003@gmail.com", "password", model.RoleAdmin); err != nil {
-		l.Fatal("unable to create test user")
-	}
-	if _, err := c.CreateUser("John", "Doe", "johndoe@bingchilling.cn", "123secure", model.RoleUser); err != nil {
-		l.Fatal("unable to create test user")
-	}
-	if _, err := c.CreateUser("Foo", "Bar", "foo@bar.com", "psw1", model.RoleUnupdatable); err != nil {
-		l.Fatal("unable to create test user")
-	}
-}
+// func main() {
+// 	builder := builder.NixPackBuilder{}
+
+// 	plan, err := builder.Plan(context.Background(), "./testing")
+// 	fmt.Println(plan, err)
+
+// 	fmt.Println(builder.Build(context.Background(), plan, "./testing"))
+// }
