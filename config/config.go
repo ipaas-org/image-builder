@@ -30,12 +30,13 @@ type (
 	}
 
 	Services struct {
-		Downloaders []Downloader `yaml:"downloaders,flow"`
-		Builders    []Builder    `yaml:"builders,flow"`
+		Connectors []Connector `yaml:"connector,flow"`
+		Builders   []Builder   `yaml:"builders,flow"`
 	}
 
-	Downloader struct {
+	Connector struct {
 		Name              string `yaml:"name"`
+		Token             string `yaml:"token"`
 		DownloadDirectory string `yaml:"downloadDirectory"`
 	}
 
