@@ -48,8 +48,23 @@ update: ### update dependencies
 
 docker: ### build and run docker image
 	docker build -t image-builder .
-	docker run -p 8080:8080 service-template
 .PHONY: docker
+
+services:
+	docker-compose up --build --remove-orphans -d rabbitmq
+.PHONY: services
+
+up:
+	docker-compose up --build --remove-orphans -d app
+.PHONY: up
+
+logs:
+	docker-compose logs -f app
+.PHONY: logs
+
+down:
+	docker-compose down --remove-orphans
+.PHONY: down
 
 prep: fmt lint test ### run all checks before commit
 .PHONY: prep
