@@ -11,9 +11,9 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/ipaas-org/image-builder/providers/connectors"
 	"github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
-	"github.com/vano2903/image-builder/providers/connectors"
 )
 
 const (
@@ -22,6 +22,18 @@ const (
 	DefaultBranchMeta = "default_branch"
 	TagsMeta          = "tags"
 	ReleasesMeta      = "releases"
+
+	branchesBaseUrl = "https://api.github.com/repos/%s/%s/branches"
+	baseUrlMetadata = "https://api.github.com/repos/%s/%s"
+	baseUrlTag      = "https://api.github.com/repos/%s/%s/tags"
+	baseUrlRelease  = "https://api.github.com/repos/%s/%s/releases"
+)
+
+var (
+	ErrInvalidUrl      = errors.New("invalid url, check if the url is correct or if the repo is not private")
+	ErrMissingRepoName = errors.New("invalid url, missing repository name")
+	ErrMissingUsername = errors.New("invalid url, missing username")
+	ErrGithubRateLimit = errors.New("github api rate limit exceeded")
 )
 
 var _ connectors.Connector = new(GithubConnector)
@@ -29,14 +41,12 @@ var _ connectors.Connector = new(GithubConnector)
 type GithubConnector struct {
 	l                 *logrus.Logger
 	userAgent         string
-	token             string
 	downloadDirectory string
 }
 
-func NewGithubConnector(downloadDirectory, userAgent, token string, l *logrus.Logger) *GithubConnector {
+func NewGithubConnector(downloadDirectory, userAgent string, l *logrus.Logger) *GithubConnector {
 	return &GithubConnector{
 		l:                 l,
-		token:             token,
 		userAgent:         userAgent,
 		downloadDirectory: downloadDirectory,
 	}
@@ -50,23 +60,23 @@ func (g GithubConnector) checkPrefix(url string) bool {
 }
 
 // ValidateAndLintUrl check if an url is a valid and existing GitHub repo url
-func (g GithubConnector) ValidateAndLintUrl(url string) (string, error) {
+func (g GithubConnector) ValidateAndLintUrl(url, token string) (string, error) {
 	//sanitize the url
 	g.l.Debugf("validating url: %s", url)
 	url = strings.TrimSpace(url)
 	url = strings.ToLower(url)
 
 	if !strings.Contains(url, "/") {
-		return "", errors.New("invalid url")
+		return "", ErrInvalidUrl
 	}
 
 	urlSplit := strings.Split(url, "/")
 	if urlSplit[len(urlSplit)-1] == "" || urlSplit[len(urlSplit)-1] == "github.com" {
-		return "", errors.New("invalid url, missing repository name")
+		return "", ErrMissingRepoName
 	}
 
 	if urlSplit[len(urlSplit)-2] == "" || urlSplit[len(urlSplit)-2] == "github.com" {
-		return "", errors.New("invalid url, missing username")
+		return "", ErrMissingUsername
 	}
 
 	//we allow users to not specify the github.com part of the url
@@ -86,7 +96,7 @@ func (g GithubConnector) ValidateAndLintUrl(url string) (string, error) {
 	}
 
 	request.Header.Set("User-Agent", g.userAgent)
-	request.Header.Set("Authorization", "token "+g.token)
+	request.Header.Set("Authorization", "token "+token)
 	resp, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return "", err
@@ -101,10 +111,10 @@ func (g GithubConnector) ValidateAndLintUrl(url string) (string, error) {
 	if resp.StatusCode != 200 {
 		if resp.StatusCode == 403 {
 			g.l.Errorf("githubConnector.getReleases: github api rate limit exceeded: %v", jsonBody)
-			return "", fmt.Errorf("github api rate limit exceeded")
+			return "", ErrGithubRateLimit
 		} else if resp.StatusCode == 404 {
 			g.l.Warnf("%s is not a valid url", url)
-			return "", errors.New("invalid url, check if the url is correct or if the repo is not private")
+			return "", ErrInvalidUrl
 		}
 		g.l.Errorf("githubConnector.getReleases: error getting info for %s [%s]: %v", url, resp.Status, jsonBody)
 		return "", fmt.Errorf("error getting info for %s [%s]: %v", url, resp.Status, jsonBody)
@@ -114,8 +124,8 @@ func (g GithubConnector) ValidateAndLintUrl(url string) (string, error) {
 }
 
 // GetUserAndRepo get the username of the creator and the repository's name given a GitHub repository url
-func (g GithubConnector) GetUserAndRepo(url string) (string, string, error) {
-	url, err := g.ValidateAndLintUrl(url)
+func (g GithubConnector) GetUserAndRepo(url, token string) (string, string, error) {
+	url, err := g.ValidateAndLintUrl(url, token)
 	if err != nil {
 		return "", "", err
 	}
@@ -128,33 +138,31 @@ func (g GithubConnector) GetUserAndRepo(url string) (string, string, error) {
 
 // Pull clones the repository from GitHub given the url and save it in the download directory,
 // if the download successfully complete the name of the path, name and last commit hash will be returned
-func (g GithubConnector) Pull(userID, branch, url string) (string, string, string, error) {
+func (g GithubConnector) Pull(userID, branch, url, token string) (string, string, string, error) {
 	var err error
-	url, err = g.ValidateAndLintUrl(url)
+	url, err = g.ValidateAndLintUrl(url, token)
 	if err != nil {
 		return "", "", "", err
 	}
 
 	//get the name of the repo
 	g.l.Info("getting repo name...")
-	user, repoName, err := g.GetUserAndRepo(url)
+	user, repoName, err := g.GetUserAndRepo(url, token)
 	if err != nil {
-		g.l.Errorf("githubConnector.Pull: error gettingerr")
+		g.l.Errorf("githubConnector.Pull: error getting user and repo: %v", err)
 		return "", "", "", err
 	}
 
 	if branch == "" {
-		branch, _, err = g.getBranchAndDescription(user, repoName)
+		branch, _, err = g.getBranchAndDescription(user, repoName, token)
 		if err != nil {
 			return "", "", "", err
 		}
 	}
-	fmt.Println("ok")
-	fmt.Println("repo name:", repoName)
-	fmt.Println("user:", user)
-	fmt.Println("branch:", branch)
+	g.l.Infoln("ok")
+	g.l.Infof("user: %s, repo: %s, branch: %s\n", user, repoName, branch)
 
-	branches, err := g.getBranches(user, repoName)
+	branches, err := g.getBranches(user, repoName, token)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -174,7 +182,7 @@ func (g GithubConnector) Pull(userID, branch, url string) (string, string, strin
 	if err != nil {
 		return "", "", "", fmt.Errorf("error creating the tmp folder: %v", err)
 	}
-	fmt.Printf("downloading repo in %s...", tmpPath)
+	g.l.Infof("downloading repo in %s...", tmpPath)
 
 	r, err := git.PlainClone(tmpPath, false, &git.CloneOptions{
 		URL:           url,
@@ -184,10 +192,10 @@ func (g GithubConnector) Pull(userID, branch, url string) (string, string, strin
 		// Progress: os.Stdout,
 	})
 	if err != nil {
-		fmt.Println("err")
+		g.l.Errorf("githubConnector.Pull: error cloning the repo: %v", err)
 		return "", "", "", err
 	}
-	fmt.Println("ok")
+	g.l.Info("ok")
 
 	logs, err := r.Log(&git.LogOptions{})
 	if err != nil {
@@ -196,28 +204,28 @@ func (g GithubConnector) Pull(userID, branch, url string) (string, string, strin
 	defer logs.Close()
 
 	//get the last commit hash
-	fmt.Print("getting last commit hash...")
+	g.l.Info("getting last commit hash...")
 	commitHash, err := logs.Next()
 	if err != nil {
-		fmt.Println("err")
+		g.l.Errorf("githubConnector.Pull: error getting the last commit hash: %v", err)
 		return "", "", "", err
 	}
-	fmt.Println("ok")
+	g.l.Infoln("ok")
 
 	//remove the .git folder
-	fmt.Print("removing .git...")
+	g.l.Info("removing .git...")
 	if err := os.RemoveAll(fmt.Sprintf("%s/.git", tmpPath)); err != nil {
-		fmt.Println("err")
+		g.l.Errorf("githubConnector.Pull: error removing .git folder: %v", err)
 		return "", "", "", err
 	}
-	fmt.Println("ok")
+	g.l.Infoln("ok")
 	return tmpPath, repoName, commitHash.Hash.String(), nil
 }
 
 // GetMetadata gets the description, default branch and all the branches of a GitHub repository
-func (g GithubConnector) GetMetadata(url string) (map[string][]string, error) {
+func (g GithubConnector) GetMetadata(url, token string) (map[string][]string, error) {
 	meta := make(map[string][]string)
-	username, repoName, err := g.GetUserAndRepo(url)
+	username, repoName, err := g.GetUserAndRepo(url, token)
 	if err != nil {
 		return nil, err
 	}
@@ -232,7 +240,7 @@ func (g GithubConnector) GetMetadata(url string) (map[string][]string, error) {
 	go func() {
 		defer wg.Done()
 		var err error
-		defaultBranch, description, err = g.getBranchAndDescription(username, repoName)
+		defaultBranch, description, err = g.getBranchAndDescription(username, repoName, token)
 		if err != nil {
 			errch <- err
 		}
@@ -241,7 +249,7 @@ func (g GithubConnector) GetMetadata(url string) (map[string][]string, error) {
 	go func() {
 		defer wg.Done()
 		var err error
-		branches, err = g.getBranches(username, repoName)
+		branches, err = g.getBranches(username, repoName, token)
 		if err != nil {
 			errch <- err
 		}
@@ -253,7 +261,7 @@ func (g GithubConnector) GetMetadata(url string) (map[string][]string, error) {
 	go func() {
 		defer wg.Done()
 		var err error
-		tags, err = g.getTags(username, repoName)
+		tags, err = g.getTags(username, repoName, token)
 		if err != nil {
 			errch <- err
 		}
@@ -262,7 +270,7 @@ func (g GithubConnector) GetMetadata(url string) (map[string][]string, error) {
 	go func() {
 		defer wg.Done()
 		var err error
-		releases, err = g.getReleases(username, repoName)
+		releases, err = g.getReleases(username, repoName, token)
 		if err != nil {
 			errch <- err
 		}
@@ -285,15 +293,15 @@ func (g GithubConnector) GetMetadata(url string) (map[string][]string, error) {
 	return meta, nil
 }
 
-func (g GithubConnector) getBranches(username, repo string) ([]string, error) {
+func (g GithubConnector) getBranches(username, repo, token string) ([]string, error) {
 	//get the branches
-	baseUrl := "https://api.github.com/repos/%s/%s/branches"
-	request, err := http.NewRequest("GET", fmt.Sprintf(baseUrl, username, repo), nil)
+	request, err := http.NewRequest("GET", fmt.Sprintf(branchesBaseUrl, username, repo), nil)
 	if err != nil {
 		return nil, err
 	}
 
 	request.Header.Set("User-Agent", g.userAgent)
+	request.Header.Set("Authorization", "token "+token)
 	resp, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return nil, err
@@ -323,14 +331,14 @@ func (g GithubConnector) getBranches(username, repo string) ([]string, error) {
 	return branches, nil
 }
 
-func (g GithubConnector) getBranchAndDescription(username, repo string) (string, string, error) {
-	baseUrl := "https://api.github.com/repos/%s/%s"
-	request, err := http.NewRequest("GET", fmt.Sprintf(baseUrl, username, repo), nil)
+func (g GithubConnector) getBranchAndDescription(username, repo, token string) (string, string, error) {
+	request, err := http.NewRequest("GET", fmt.Sprintf(baseUrlMetadata, username, repo), nil)
 	if err != nil {
 		return "", "", err
 	}
 
 	request.Header.Set("User-Agent", g.userAgent)
+	request.Header.Set("Authorization", "token "+token)
 	resp, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return "", "", err
@@ -355,14 +363,14 @@ func (g GithubConnector) getBranchAndDescription(username, repo string) (string,
 	return gjson.Get(jsonBody, "default_branch").String(), gjson.Get(jsonBody, "description").String(), nil
 }
 
-func (g GithubConnector) getTags(username, repo string) ([]string, error) {
-	baseUrl := "https://api.github.com/repos/%s/%s/tags"
-	request, err := http.NewRequest("GET", fmt.Sprintf(baseUrl, username, repo), nil)
+func (g GithubConnector) getTags(username, repo, token string) ([]string, error) {
+	request, err := http.NewRequest("GET", fmt.Sprintf(baseUrlTag, username, repo), nil)
 	if err != nil {
 		return nil, err
 	}
 
 	request.Header.Set("User-Agent", g.userAgent)
+	request.Header.Set("Authorization", "token "+token)
 	resp, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return nil, err
@@ -392,14 +400,14 @@ func (g GithubConnector) getTags(username, repo string) ([]string, error) {
 	return tags, nil
 }
 
-func (g GithubConnector) getReleases(username, repo string) ([]string, error) {
-	baseUrl := "https://api.github.com/repos/%s/%s/releases"
-	request, err := http.NewRequest("GET", fmt.Sprintf(baseUrl, username, repo), nil)
+func (g GithubConnector) getReleases(username, repo, token string) ([]string, error) {
+	request, err := http.NewRequest("GET", fmt.Sprintf(baseUrlRelease, username, repo), nil)
 	if err != nil {
 		return nil, err
 	}
 
 	request.Header.Set("User-Agent", g.userAgent)
+	request.Header.Set("Authorization", "token "+token)
 	resp, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return nil, err
