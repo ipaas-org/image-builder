@@ -2,14 +2,17 @@ package config
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/ilyakaznacheev/cleanenv"
+	"github.com/joho/godotenv"
 )
 
 type (
 	Config struct {
 		App      `yaml:"app"`
 		Log      `yaml:"logger"`
+		RMQ      `yaml:"rabbitmq"`
 		Database `yaml:"database"`
 		Services `yaml:"services"`
 	}
@@ -22,6 +25,11 @@ type (
 	Log struct {
 		Level string `env-required:"true" yaml:"level" env:"LOG_LEVEL"`
 		Type  string `env-required:"true" yaml:"type"  env:"LOG_TYPE"`
+	}
+
+	RMQ struct {
+		URI           string `env-required:"true" yaml:"uri" env:"RABBITMQ_URI"`
+		ExchangeQueue string `env-required:"true" yaml:"exchangeQueue" env:"RABBITMQ_EXCHANGE_QUEUE"`
 	}
 
 	Database struct {
@@ -49,15 +57,20 @@ type (
 func NewConfig() (*Config, error) {
 	cfg := &Config{}
 
-	err := cleanenv.ReadConfig("./config/config.yml", cfg)
-	if err != nil {
+	if err := cleanenv.ReadConfig("./config/config.yml", cfg); err != nil {
 		return nil, fmt.Errorf("config error: %w", err)
 	}
 
-	err = cleanenv.ReadEnv(cfg)
-	if err != nil {
+	if err := cleanenv.ReadEnv(cfg); err != nil {
 		return nil, err
 	}
+
+	if err := godotenv.Load("./config/.env"); err != nil {
+		return nil, err
+	}
+
+	fmt.Println("calling config")
+	fmt.Println(os.Environ())
 
 	return cfg, nil
 }

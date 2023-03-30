@@ -2,7 +2,9 @@ app:
   name: "image-builder"
   version: "0.0.1"
 
-RMQ:
+rabbitmq:
+  uri: amqp://guest:guest@localhost:5672/
+  exchangeQueue: test
 
 logger:
   level: "debug"
