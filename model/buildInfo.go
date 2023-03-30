@@ -2,6 +2,7 @@ package model
 
 type (
 	ImageBuildInfo struct {
+		Token     string `json:"token"`
 		UserID    string `json:"userID"`
 		Type      string `json:"type"`     // repo, tag, release, ...
 		Connector string `json:"provider"` //github, gitlab, ...
