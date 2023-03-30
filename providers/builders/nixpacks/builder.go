@@ -3,7 +3,7 @@ package nixpacks
 import (
 	"context"
 
-	"github.com/vano2903/image-builder/providers/builders"
+	"github.com/ipaas-org/image-builder/providers/builders"
 	nixpacks "github.com/vano2903/nixpacks-go"
 )
 
