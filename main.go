@@ -1,43 +1,39 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 
-	"github.com/labstack/echo/v4"
-	"github.com/vano2903/image-builder/config"
-	"github.com/vano2903/image-builder/controller"
-	"github.com/vano2903/image-builder/model"
-	"github.com/vano2903/image-builder/pkg/logger"
-	"github.com/vano2903/image-builder/providers/builders/nixpacks"
-	"github.com/vano2903/image-builder/providers/connectors/github"
-	// "github.com/vano2903/image-builder/repo/mock"
+	"github.com/ipaas-org/image-builder/config"
+	"github.com/ipaas-org/image-builder/controller"
+	"github.com/ipaas-org/image-builder/handlers/rabbitmq"
+	"github.com/ipaas-org/image-builder/model"
+	"github.com/ipaas-org/image-builder/pkg/logger"
+	"github.com/ipaas-org/image-builder/providers/builders/nixpacks"
+	"github.com/ipaas-org/image-builder/providers/connectors/github"
+	"github.com/ipaas-org/image-builder/providers/registry/registry"
 )
 
 func main() {
 	conf, err := config.NewConfig()
 	if err != nil {
-		panic(err)
+		log.Fatalln(err)
 	}
 
 	l := logger.NewLogger(conf.Log.Level, conf.Log.Type)
 	l.Debug("initizalized logger")
 
-	// if conf.Database.Driver != "mock" {
-	// 	log.Fatal("only mock database is supported in this example")
-	// }
-
-	// //creating the instances for the application
-	// repo := mock.NewRepo()
-
-	//creating the controller
 	c := controller.NewBuilderController(l)
 
 	l.Info(conf)
 	for _, providerInfo := range conf.Services.Connectors {
 		switch providerInfo.Name {
 		case model.ConnectorGithub:
-			g := github.NewGithubConnector(providerInfo.DownloadDirectory, fmt.Sprintf("ipaas-%s-%s", conf.App.Name, conf.App.Version), "", l)
+			g := github.NewGithubConnector(providerInfo.DownloadDirectory, fmt.Sprintf("ipaas-%s-%s", conf.App.Name, conf.App.Version), l)
 			c.AddConnector(model.ConnectorGithub, g)
 			l.Infof("succesfully added %s as downloader", providerInfo.Name)
 
@@ -54,22 +50,41 @@ func main() {
 		log.Fatal("only nixpacks builder is supported in the app version:", conf.App.Version)
 	}
 
-	nix := nixpacks.NewNixPackBuilder(conf.Services.Builders[0].RegistryUri)
+	nix := nixpacks.NewNixPackBuilder(conf.App.Version)
+
+	if conf.Services.Registries[0].Name != model.RegistryDocker {
+		log.Fatal("only docker registry is supported in the app version:", conf.App.Version)
+	}
+	r, err := registry.NewRegistry(conf.Services.Registries[0].ServerAddress, os.Getenv("REGISTRY_DOCKER_USERNAME"), os.Getenv("REGISTRY_DOCKER_PASSWORD"))
+	if err != nil {
+		log.Fatalf("error building docker registry: %v\n", err)
+	}
+
+	c.AddRegistry(r)
 
 	c.AddBuilder(model.DownloaderNixpacks, nix)
+	l.Info("succesfully added nixpacks as builder")
 
-	//creating the http server
-	e := echo.New()
+	rmq := rabbitmq.NewRabbitMQ(conf.RMQ.URI, conf.RMQ.ExchangeQueue, c, l)
 
-	//starting the server
-	e.Logger.Fatal(e.Start(":" + "8080")) //conf.HTTP.Port))
+	if err := rmq.Connect(); err != nil {
+		l.Fatalf("error connecting to rabbitmq: %s", err.Error())
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	// Waiting signal
+	interrupt := make(chan os.Signal, 1)
+	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		rmq.Consume(ctx)
+	}()
+
+	select {
+	case s := <-interrupt:
+		l.Info("app - Run - signal: " + s.String())
+		cancel()
+	case err = <-rmq.Error:
+		l.Error(fmt.Errorf("rabbitmq: %w", err))
+	}
 }
-
-// func main() {
-// 	builder := builder.NixPackBuilder{}
-
-// 	plan, err := builder.Plan(context.Background(), "./testing")
-// 	fmt.Println(plan, err)
-
-// 	fmt.Println(builder.Build(context.Background(), plan, "./testing"))
-// }
