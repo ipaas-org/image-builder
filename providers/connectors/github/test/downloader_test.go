@@ -13,7 +13,7 @@ import (
 
 const (
 	userAgent   = "ipaas-image-builder-test"
-	downloadTmp = "./tmp"
+	downloadTmp = "./tmpConnector"
 )
 
 var token string
@@ -83,6 +83,19 @@ func TestPullRepo(t *testing.T) {
 		_, _, _, err := g.Pull("18008", "unexisting-branch", "vano2903/testing", token)
 		if err == nil {
 			t.Fatal(err)
+		}
+	})
+
+	t.Run("pull with invalid token", func(t *testing.T) {
+		if _, err := os.Stat(downloadTmp); os.IsNotExist(err) {
+			if err := os.Mkdir(downloadTmp, 0755); err != nil {
+				t.Fatal(err)
+			}
+		}
+		g := NewGithubConnector()
+		_, _, _, err := g.Pull("18008", "", "vano2903/testing", "invalid-token")
+		if err == nil {
+			t.Fatal("should have returned an error")
 		}
 	})
 
