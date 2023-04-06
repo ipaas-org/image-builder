@@ -3,7 +3,6 @@ package builders
 import "context"
 
 type Builder interface {
-	Publish(string) error
-	Plan(context.Context, string) (string, error)
-	Build(context.Context, string, string) (imageName string, errorMessage string, err error)
+	Plan(ctx context.Context, path string) (plan string, err error)
+	Build(ctx context.Context, userID, repo, config, path string) (imageName string, errorMessage string, err error)
 }

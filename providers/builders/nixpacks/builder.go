@@ -2,6 +2,7 @@ package nixpacks
 
 import (
 	"context"
+	"time"
 
 	"github.com/ipaas-org/image-builder/providers/builders"
 	nixpacks "github.com/vano2903/nixpacks-go"
@@ -10,17 +11,13 @@ import (
 var _ builders.Builder = new(NixPackBuilder)
 
 type NixPackBuilder struct {
-	RegistryUri string
+	builderVersion string
 }
 
-func NewNixPackBuilder(registryUri string) *NixPackBuilder {
+func NewNixPackBuilder(builderVersion string) *NixPackBuilder {
 	return &NixPackBuilder{
-		RegistryUri: registryUri,
+		builderVersion: builderVersion,
 	}
-}
-
-func (b NixPackBuilder) Publish(image string) error {
-	return nil
 }
 
 func (b NixPackBuilder) Plan(ctx context.Context, path string) (string, error) {
@@ -42,13 +39,34 @@ func (b NixPackBuilder) Plan(ctx context.Context, path string) (string, error) {
 }
 
 // first string is the image name, second is an error message if there was an error building the image
-func (b NixPackBuilder) Build(ctx context.Context, config, path string) (string, string, error) {
+func (b NixPackBuilder) Build(ctx context.Context, userID, repo, config, path string) (string, string, error) {
 	n, err := nixpacks.NewNixpacks()
 	if err != nil {
 		return "", "", err
 	}
 
 	buildCmd, err := n.Build(ctx, nixpacks.BuildOptions{
+		Labels: []nixpacks.Label{
+			{
+				Key:   "org.ipaas.image-builder.version",
+				Value: b.builderVersion,
+			},
+			{
+				Key:   "org.ipaas.image-builder.builder",
+				Value: "nixpacks",
+			},
+			{
+				Key:   "application.repo",
+				Value: repo,
+			}, {
+				Key:   "application.userID",
+				Value: userID,
+			},
+			{
+				Key:   "application.builtAt",
+				Value: time.Now().Format("02/01/2006 15:04:05"),
+			},
+		},
 		Path:     path,
 		JsonPlan: config,
 	})
@@ -57,6 +75,5 @@ func (b NixPackBuilder) Build(ctx context.Context, config, path string) (string,
 	}
 
 	build, err := buildCmd.Result()
-
 	return build.ImageName, build.BuildError, err
 }
