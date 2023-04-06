@@ -6,6 +6,7 @@ import (
 
 	"github.com/ilyakaznacheev/cleanenv"
 	"github.com/joho/godotenv"
+	"github.com/sirupsen/logrus"
 )
 
 type (
@@ -40,17 +41,21 @@ type (
 	Services struct {
 		Connectors []Connector `yaml:"connector,flow"`
 		Builders   []Builder   `yaml:"builders,flow"`
+		Registries []Registry  `yaml:"registries,flow"`
 	}
 
 	Connector struct {
 		Name              string `yaml:"name"`
-		Token             string `yaml:"token"`
 		DownloadDirectory string `yaml:"downloadDirectory"`
 	}
 
 	Builder struct {
-		Name        string `yaml:"name"`
-		RegistryUri string `yaml:"registryUri"`
+		Name string `yaml:"name"`
+	}
+
+	Registry struct {
+		Name          string `yaml:"name"`
+		ServerAddress string `yaml:"serverAddress"`
 	}
 )
 
@@ -66,11 +71,20 @@ func NewConfig() (*Config, error) {
 	}
 
 	if err := godotenv.Load("./config/.env"); err != nil {
-		return nil, err
+		if err.Error() != "open ./config/.env: no such file or directory" {
+			return nil, err
+		} else {
+			logrus.Warn(".env file not found, using env variables")
+		}
 	}
 
-	fmt.Println("calling config")
-	fmt.Println(os.Environ())
+	if os.Getenv("REGISTRY_DOCKER_USERNAME") == "" || os.Getenv("REGISTRY_DOCKER_PASSWORD") == "" {
+		logrus.Warn("REGISTRY_DOCKER_USERNAME or REGISTRY_DOCKER_PASSWORD not set, using anonymous access")
+	}
+
+	if os.Getenv("RABBITMQ_URI") == ""{
+		logrus.Fatalln("RABBITMQ_URI not set, this env variable is required")
+	} 
 
 	return cfg, nil
 }
