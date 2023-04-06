@@ -17,11 +17,11 @@ import (
 )
 
 const (
-	DescriptionMeta   = "description"
-	BranchesMeta      = "branches"
-	DefaultBranchMeta = "default_branch"
-	TagsMeta          = "tags"
-	ReleasesMeta      = "releases"
+	MetaDescription   connectors.MetaType = "description" //description will come with defaul_branch
+	MetaBranches      connectors.MetaType = "branches"
+	MetaDefaultBranch connectors.MetaType = "default_branch" //default branch will come with description
+	MetaTags          connectors.MetaType = "tags"
+	MetaReleases      connectors.MetaType = "releases"
 
 	branchesBaseUrl = "https://api.github.com/repos/%s/%s/branches"
 	baseUrlMetadata = "https://api.github.com/repos/%s/%s"
@@ -223,8 +223,9 @@ func (g GithubConnector) Pull(userID, branch, url, token string) (string, string
 }
 
 // GetMetadata gets the description, default branch and all the branches of a GitHub repository
-func (g GithubConnector) GetMetadata(url, token string) (map[string][]string, error) {
-	meta := make(map[string][]string)
+// if meta is not nil then only the specified metadata will be returned
+func (g GithubConnector) GetMetadata(url, token string, meta ...connectors.MetaType) (map[connectors.MetaType][]string, error) {
+	metaInfo := make(map[connectors.MetaType][]string)
 	username, repoName, err := g.GetUserAndRepo(url, token)
 	if err != nil {
 		return nil, err
@@ -234,47 +235,114 @@ func (g GithubConnector) GetMetadata(url, token string) (map[string][]string, er
 
 	var defaultBranch, description string
 	var branches, tags, releases []string
-
 	errch := make(chan error, 1)
-	wg.Add(4)
-	go func() {
-		defer wg.Done()
-		var err error
-		defaultBranch, description, err = g.getBranchAndDescription(username, repoName, token)
-		if err != nil {
-			errch <- err
-		}
-	}()
+	defer close(errch)
 
-	go func() {
-		defer wg.Done()
-		var err error
-		branches, err = g.getBranches(username, repoName, token)
-		if err != nil {
-			errch <- err
-		}
-		if len(branches) == 0 {
-			branches = []string{defaultBranch}
-		}
-	}()
+	if len(meta) == 0 {
+		wg.Add(4)
+		go func() {
+			defer wg.Done()
+			var err error
+			defaultBranch, description, err = g.getBranchAndDescription(username, repoName, token)
+			if err != nil {
+				errch <- err
+			}
+		}()
 
-	go func() {
-		defer wg.Done()
-		var err error
-		tags, err = g.getTags(username, repoName, token)
-		if err != nil {
-			errch <- err
-		}
-	}()
+		go func() {
+			defer wg.Done()
+			var err error
+			branches, err = g.getBranches(username, repoName, token)
+			if err != nil {
+				errch <- err
+			}
+			if len(branches) == 0 {
+				branches = []string{defaultBranch}
+			}
+		}()
 
-	go func() {
-		defer wg.Done()
-		var err error
-		releases, err = g.getReleases(username, repoName, token)
-		if err != nil {
-			errch <- err
+		go func() {
+			defer wg.Done()
+			var err error
+			tags, err = g.getTags(username, repoName, token)
+			if err != nil {
+				errch <- err
+			}
+		}()
+
+		go func() {
+			defer wg.Done()
+			var err error
+			releases, err = g.getReleases(username, repoName, token)
+			if err != nil {
+				errch <- err
+			}
+		}()
+	} else {
+		for _, m := range meta {
+			switch m {
+			case MetaDefaultBranch:
+				if description != "" {
+					continue
+				}
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					var err error
+					defaultBranch, description, err = g.getBranchAndDescription(username, repoName, token)
+					if err != nil {
+						errch <- err
+					}
+				}()
+			case MetaDescription:
+				if defaultBranch != "" {
+					continue
+				}
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					var err error
+					defaultBranch, description, err = g.getBranchAndDescription(username, repoName, token)
+					if err != nil {
+						errch <- err
+					}
+				}()
+			case MetaBranches:
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					var err error
+					branches, err = g.getBranches(username, repoName, token)
+					if err != nil {
+						errch <- err
+					}
+					if len(branches) == 0 {
+						branches = []string{defaultBranch}
+					}
+				}()
+			case MetaTags:
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					var err error
+					tags, err = g.getTags(username, repoName, token)
+					if err != nil {
+						errch <- err
+					}
+				}()
+			case MetaReleases:
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					var err error
+					releases, err = g.getReleases(username, repoName, token)
+					if err != nil {
+						errch <- err
+					}
+				}()
+			}
 		}
-	}()
+	}
 
 	wg.Wait()
 	select {
@@ -282,15 +350,14 @@ func (g GithubConnector) GetMetadata(url, token string) (map[string][]string, er
 		return nil, err
 	default:
 	}
-	close(errch)
 
-	meta[DefaultBranchMeta] = []string{defaultBranch}
-	meta[DescriptionMeta] = []string{description}
-	meta[ReleasesMeta] = releases
-	meta[TagsMeta] = tags
-	meta[BranchesMeta] = branches
+	metaInfo[MetaDefaultBranch] = []string{defaultBranch}
+	metaInfo[MetaDescription] = []string{description}
+	metaInfo[MetaReleases] = releases
+	metaInfo[MetaTags] = tags
+	metaInfo[MetaBranches] = branches
 
-	return meta, nil
+	return metaInfo, nil
 }
 
 func (g GithubConnector) getBranches(username, repo, token string) ([]string, error) {
