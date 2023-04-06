@@ -17,7 +17,6 @@ type (
 		Path       string
 		RepoName   string
 		LastCommit string
-		Metadata   map[string][]string
 	}
 )
 
@@ -30,4 +29,6 @@ const (
 	ConnectorGithub = "github"
 
 	DownloaderNixpacks = "nixpacks"
+
+	RegistryDocker = "docker"
 )
