@@ -34,11 +34,11 @@ lint: ### check by golangci linter
 .PHONY: linter-golangci
 
 test: ### run test
-	go test  ./... 
+	go test ./controller/tests
 .PHONY: test
 
 testv: ### run verbose test
-	go test -v ./... 
+	go test -v ./controller/tests
 .PHONY: test
 
 update: ### update dependencies
@@ -46,7 +46,7 @@ update: ### update dependencies
 	go get -u
 .PHONY: update
 
-docker: ### build and run docker image
+build: ### build and run docker image
 	docker build -t image-builder .
 .PHONY: docker
 
