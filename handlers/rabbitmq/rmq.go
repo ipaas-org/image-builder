@@ -18,10 +18,10 @@ type RabbitMQ struct {
 	Delivery      <-chan amqp.Delivery
 	uri           string
 	exchangeQueue string
-	Controller    controller.BuilderController
+	Controller    controller.Builder
 }
 
-func NewRabbitMQ(uri, exchangeQueue string, controller controller.BuilderController, logger *logrus.Logger) *RabbitMQ {
+func NewRabbitMQ(uri, exchangeQueue string, controller controller.Builder, logger *logrus.Logger) *RabbitMQ {
 	return &RabbitMQ{
 		uri:           uri,
 		l:             logger,
