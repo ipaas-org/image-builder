@@ -14,7 +14,7 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-var _ BuilderController = new(Builder)
+// var _ BuilderController = new(Builder)
 
 var (
 	ErrConnectorNotFound = errors.New("connector not found")
