@@ -18,17 +18,15 @@ help: ## Display this help screen
 # 	docker-compose down --remove-orphans
 # .PHONY: compose-down
 
-init-dev:
+init-dev: ### initialize commitizen (not mandatory)
 	commitizen init cz-conventional-changelog -save-dev -save-exact
 .PHONY: init-dev
 
-run: fmt ### regenerate swag docs, check module and run go code
-	go mod tidy
-	go mod download
+run: fmt lint ### format, lint, check module and run go code
 	go run .
 .PHONY: run
 
-fmt: ### format swag docs, go mod and code
+fmt: ### format go mod and code
 	go mod tidy 
 	go fmt .
 .PHONY: fmt
@@ -47,28 +45,29 @@ testv: ### run verbose test
 
 update: ### update dependencies
 	go mod tidy
-	go get -u
+	go get -u -v
 .PHONY: update
 
-build: ### build and run docker image
+build: prep ### build docker image called image-builder
 	docker build -t image-builder .
 .PHONY: docker
 
-services:
+services: ### start services needed
 	docker-compose up --build --remove-orphans -d rabbitmq
 .PHONY: services
 
-up:
+up: build ### start docker image following docker-compose
 	docker-compose up --build --remove-orphans -d app
+	make logs
 .PHONY: up
 
-logs:
+logs: ### attach app's logs from docker-compose
 	docker-compose logs -f app
 .PHONY: logs
 
-down:
+down: ### stop all container created by docker-compose
 	docker-compose down --remove-orphans
 .PHONY: down
 
-prep: fmt lint test ### run all checks before commit
+prep: fmt lint test ### format, lint and test. to use before commit
 .PHONY: prep

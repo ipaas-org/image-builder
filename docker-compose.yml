@@ -9,10 +9,10 @@ services:
       - ./_volume/data/:/var/lib/rabbitmq/
       # - ./_volume/log/:/var/log/rabbitmq
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: image-builder:latest
     network_mode: host
+    env_file:
+      - ./config/.env
     deploy:
       mode: replicated
       replicas: 3
