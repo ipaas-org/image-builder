@@ -1,2 +1,7 @@
 _volume/
 ./config/.env
+node_modules/
+package*
+.env.example
+Makefile
+readme.md

@@ -18,6 +18,10 @@ help: ## Display this help screen
 # 	docker-compose down --remove-orphans
 # .PHONY: compose-down
 
+init-dev:
+	commitizen init cz-conventional-changelog -save-dev -save-exact
+.PHONY: init-dev
+
 run: fmt ### regenerate swag docs, check module and run go code
 	go mod tidy
 	go mod download
