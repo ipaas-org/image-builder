@@ -66,7 +66,7 @@ func (b *Builder) AddRegistry(reg registry.Registryer) {
 	b.registry = reg
 }
 
-func (b *Builder) PullRepo(info model.ImageBuildInfo) (model.PulledRepoInfo, error) {
+func (b *Builder) PullRepo(info model.BuildRequest) (model.PulledRepoInfo, error) {
 	if info.Token == "" {
 		return model.PulledRepoInfo{}, ErrEmptyToken
 	}
@@ -90,7 +90,7 @@ func (b *Builder) PullRepo(info model.ImageBuildInfo) (model.PulledRepoInfo, err
 	return pullInfo, nil
 }
 
-func (b *Builder) GetMetadata(info model.ImageBuildInfo) (map[connectors.MetaType][]string, error) {
+func (b *Builder) GetMetadata(info model.BuildRequest) (map[connectors.MetaType][]string, error) {
 	if info.Token == "" {
 		return nil, ErrEmptyToken
 	}
@@ -111,7 +111,7 @@ func (b *Builder) GetMetadata(info model.ImageBuildInfo) (map[connectors.MetaTyp
 	return metadata, nil
 }
 
-func (b *Builder) GetGranularMetadata(info model.ImageBuildInfo, meta ...connectors.MetaType) (map[connectors.MetaType][]string, error) {
+func (b *Builder) GetGranularMetadata(info model.BuildRequest, meta ...connectors.MetaType) (map[connectors.MetaType][]string, error) {
 	if info.Token == "" {
 		return nil, ErrEmptyToken
 	}
@@ -132,7 +132,7 @@ func (b *Builder) GetGranularMetadata(info model.ImageBuildInfo, meta ...connect
 	return metadata, nil
 }
 
-func (b *Builder) BuildImage(ctx context.Context, info model.ImageBuildInfo, path string) (string, string, error) {
+func (b *Builder) BuildImage(ctx context.Context, info model.BuildRequest, path string) (string, string, error) {
 	//clean up the path
 	defer func() {
 		b.l.Infof("cleaning up %s", path)

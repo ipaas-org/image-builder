@@ -78,7 +78,7 @@ func TestPullRepo(t *testing.T) {
 			}
 		}
 		setup()
-		imageBuildInfo := model.ImageBuildInfo{
+		imageBuildInfo := model.BuildRequest{
 			Token:     token,
 			Repo:      "https://github.com/vano2903/testing",
 			Branch:    "", //will default
@@ -104,7 +104,7 @@ func TestPullRepo(t *testing.T) {
 			}
 		}
 		setup()
-		imageBuildInfo := model.ImageBuildInfo{
+		imageBuildInfo := model.BuildRequest{
 			Token:     token,
 			Repo:      "https://github.com/vano2903/testing",
 			Branch:    "runtime-error", //will default
@@ -130,7 +130,7 @@ func TestPullRepo(t *testing.T) {
 			}
 		}
 		setup()
-		imageBuildInfo := model.ImageBuildInfo{
+		imageBuildInfo := model.BuildRequest{
 			Token:     token,
 			Repo:      "https://github.com/vano2903/unexisting",
 			Branch:    "master",
@@ -151,7 +151,7 @@ func TestPullRepo(t *testing.T) {
 			}
 		}
 		setup()
-		imageBuildInfo := model.ImageBuildInfo{
+		imageBuildInfo := model.BuildRequest{
 			Token:     token,
 			Repo:      "https://github.com/vano2903/testing",
 			Branch:    "unexisting-branch",
@@ -172,7 +172,7 @@ func TestPullRepo(t *testing.T) {
 			}
 		}
 		setup()
-		imageBuildInfo := model.ImageBuildInfo{
+		imageBuildInfo := model.BuildRequest{
 			Token:     token,
 			Repo:      "https://github.com/vano2903/testing",
 			Branch:    "unexisting-branch",
@@ -193,7 +193,7 @@ func TestPullRepo(t *testing.T) {
 			}
 		}
 		setup()
-		imageBuildInfo := model.ImageBuildInfo{
+		imageBuildInfo := model.BuildRequest{
 			Token:     token,
 			Repo:      "https://github.com/vano2903/ipaas",
 			Branch:    "non-relational-version",
@@ -231,7 +231,7 @@ func TestPullRepo(t *testing.T) {
 			}
 		}
 		setup()
-		imageBuildInfo := model.ImageBuildInfo{
+		imageBuildInfo := model.BuildRequest{
 			Token:     token,
 			Repo:      "https://github.com/vano2903/ipaas",
 			Branch:    "non-relational-version",
@@ -272,7 +272,7 @@ func TestBuildImage(t *testing.T) {
 			}
 		}
 		setup()
-		imageBuildInfo := model.ImageBuildInfo{
+		imageBuildInfo := model.BuildRequest{
 			Token:     token,
 			Repo:      "https://github.com/vano2903/testing",
 			Branch:    "master",
@@ -301,7 +301,7 @@ func TestBuildImage(t *testing.T) {
 		}
 
 		setup()
-		imageBuildInfo := model.ImageBuildInfo{
+		imageBuildInfo := model.BuildRequest{
 			Token:     token,
 			Repo:      "https://github.com/vano2903/testing",
 			Branch:    "non-working-version",
@@ -330,7 +330,7 @@ func TestBuildImage(t *testing.T) {
 		}
 
 		setup()
-		imageBuildInfo := model.ImageBuildInfo{
+		imageBuildInfo := model.BuildRequest{
 			Token:     token,
 			Repo:      "https://github.com/vano2903/testing",
 			Branch:    "non-working-version",
@@ -373,7 +373,7 @@ func TestPushImage(t *testing.T) {
 			}
 		}
 		setup()
-		imageBuildInfo := model.ImageBuildInfo{
+		imageBuildInfo := model.BuildRequest{
 			Token:     token,
 			Repo:      "https://github.com/vano2903/testing",
 			Branch:    "", //will default
@@ -407,7 +407,7 @@ func TestPushImage(t *testing.T) {
 			}
 		}
 		setup()
-		imageBuildInfo := model.ImageBuildInfo{
+		imageBuildInfo := model.BuildRequest{
 			Token:     token,
 			Repo:      "https://github.com/vano2903/testing",
 			Branch:    "", //will default
