@@ -39,7 +39,7 @@ type (
 	}
 
 	Services struct {
-		Connectors []Connector `yaml:"connector,flow"`
+		Connectors []Connector `yaml:"connectors,flow"`
 		Builders   []Builder   `yaml:"builders,flow"`
 		Registries []Registry  `yaml:"registries,flow"`
 	}

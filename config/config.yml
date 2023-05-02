@@ -13,7 +13,7 @@ database:
   driver: "mock"
 
 services:
-  downloaders:
+  connectors:
     - name: github
       downloadDirectory: "./tmp"
   builders:
