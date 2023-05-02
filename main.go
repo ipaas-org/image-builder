@@ -30,9 +30,19 @@ func main() {
 	c := controller.NewBuilderController(l)
 
 	l.Info(conf)
+
+	if len(conf.Services.Connectors) == 0 {
+		log.Fatal("no connectors specified")
+	}
+
 	for _, providerInfo := range conf.Services.Connectors {
 		switch providerInfo.Name {
 		case model.ConnectorGithub:
+			if _, err := os.Stat(providerInfo.DownloadDirectory); os.IsNotExist(err) {
+				if err := os.MkdirAll(providerInfo.DownloadDirectory, os.ModePerm); err != nil {
+					l.Fatalf("failed to create directory %s: %s", providerInfo.DownloadDirectory, err)
+				}
+			}
 			g := github.NewGithubConnector(providerInfo.DownloadDirectory, fmt.Sprintf("ipaas-%s-%s", conf.App.Name, conf.App.Version), l)
 			c.AddConnector(model.ConnectorGithub, g)
 			l.Infof("succesfully added %s as downloader", providerInfo.Name)
@@ -52,6 +62,9 @@ func main() {
 
 	nix := nixpacks.NewNixPackBuilder(conf.App.Version)
 
+	c.AddBuilder(model.DownloaderNixpacks, nix)
+	l.Info("succesfully added nixpacks as builder")
+
 	if conf.Services.Registries[0].Name != model.RegistryDocker {
 		log.Fatal("only docker registry is supported in the app version:", conf.App.Version)
 	}
@@ -61,9 +74,7 @@ func main() {
 	}
 
 	c.AddRegistry(r)
-
-	c.AddBuilder(model.DownloaderNixpacks, nix)
-	l.Info("succesfully added nixpacks as builder")
+	l.Info("succesfully added docker registry")
 
 	rmq := rabbitmq.NewRabbitMQ(conf.RMQ.URI, conf.RMQ.ExchangeQueue, c, l)
 
