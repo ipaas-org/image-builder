@@ -53,7 +53,7 @@ build: prep ### build docker image called image-builder
 .PHONY: docker
 
 services: ### start services needed
-	docker-compose up --build --remove-orphans -d rabbitmq registry frontend
+	docker-compose up --build --remove-orphans -d rabbitmq
 .PHONY: services
 
 up: build ### start docker image following docker-compose
