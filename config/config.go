@@ -62,14 +62,6 @@ type (
 func NewConfig() (*Config, error) {
 	cfg := &Config{}
 
-	if err := cleanenv.ReadConfig("./config/config.yml", cfg); err != nil {
-		return nil, fmt.Errorf("config error: %w", err)
-	}
-
-	if err := cleanenv.ReadEnv(cfg); err != nil {
-		return nil, err
-	}
-
 	if err := godotenv.Load("./config/.env"); err != nil {
 		if err.Error() != "open ./config/.env: no such file or directory" {
 			return nil, err
@@ -78,13 +70,21 @@ func NewConfig() (*Config, error) {
 		}
 	}
 
+	if err := cleanenv.ReadConfig("./config/config.yml", cfg); err != nil {
+		return nil, fmt.Errorf("config error: %w", err)
+	}
+
+	if err := cleanenv.ReadEnv(cfg); err != nil {
+		return nil, err
+	}
+
 	if os.Getenv("REGISTRY_DOCKER_USERNAME") == "" || os.Getenv("REGISTRY_DOCKER_PASSWORD") == "" {
 		logrus.Warn("REGISTRY_DOCKER_USERNAME or REGISTRY_DOCKER_PASSWORD not set, using anonymous access")
 	}
 
-	if os.Getenv("RABBITMQ_URI") == ""{
+	if os.Getenv("RABBITMQ_URI") == "" {
 		logrus.Fatalln("RABBITMQ_URI not set, this env variable is required")
-	} 
+	}
 
 	return cfg, nil
 }
