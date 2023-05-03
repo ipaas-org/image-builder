@@ -25,9 +25,15 @@ services:
       - ./_volume/registry:/data
   app:
     image: image-builder:latest
-    network_mode: host
-    env_file:
-      - ./config/.env
+    # network_mode: host
+    # env_file:
+    #   - ./config/.env
+    environment:
+      - RABBITMQ_URI=amqp://guest:guest@rabbitmq:5672/
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
     deploy:
       mode: replicated
       replicas: 3
+    depends_on:
+      - registry
