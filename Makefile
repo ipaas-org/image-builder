@@ -6,18 +6,6 @@
 help: ## Display this help screen
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
-# compose-up: ### Run docker-compose
-# 	docker-compose up --build -d postgres rabbitmq && docker-compose logs -f
-# .PHONY: compose-up
-
-# compose-up-integration-test: ### Run docker-compose with integration test
-# 	docker-compose up --build --abort-on-container-exit --exit-code-from integration
-# .PHONY: compose-up-integration-test
-
-# compose-down: ### Down docker-compose
-# 	docker-compose down --remove-orphans
-# .PHONY: compose-down
-
 init-dev: ### initialize commitizen (not mandatory)
 	commitizen init cz-conventional-changelog -save-dev -save-exact
 .PHONY: init-dev
@@ -71,3 +59,19 @@ down: ### stop all container created by docker-compose
 
 prep: fmt lint test ### format, lint and test. to use before commit
 .PHONY: prep
+
+.SILENT:
+devc: ### automatically start and  connect to dev container (it works even if the container is already running)
+	OUTPUT=$$(devcontainer up --workspace-folder . );\
+	OUTCOME=$$(echo $$OUTPUT | jq -r .outcome);\
+	echo $$OUTPUT;\
+	if [ $$OUTCOME = "success" ];then\
+	 COMMAND=$$(echo \'cd $$(echo $$OUTPUT | jq -r .remoteWorkspaceFolder));\
+	 COMMAND+=";su $$(echo $$OUTPUT | jq -r .remoteUser)'";\
+	 COMMAND=$$(echo docker exec -it $$(echo $$OUTPUT | jq -r .containerId) zsh -c $$COMMAND);\
+	 echo $$COMMAND;\
+	 eval $$COMMAND;\
+	else\
+	 echo "devcontainer output was not successful";\
+	fi
+.PHONY: devc

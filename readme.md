@@ -8,6 +8,18 @@ It also listens to a fail queue to retry failed builds.
 If a build is successful, it pushes the image to a registry and notifies a container manager to update the image.
 if a build fails, it sends the build request to the fail queue and retries later, if it fails too many times, it sends a notification to lesser lord kusanali (connector manager) to notify the user and discard the build request.
 
+## Requirements
+
+install devcontainer cli if you are not gonna use the vscode terminal
+
+```npm
+npm install -g @devcontainers/cli
+```
+
+after the installation run `make devc` and it will start the container and attach the tty to it.
+
+if you are gonna use vscode make sure to have the dev containers extension installed and reload the window, it should prompt you to open the folder in the container.
+
 ## How to start the service
 
 before starting the development make sure you have a valid .env file
