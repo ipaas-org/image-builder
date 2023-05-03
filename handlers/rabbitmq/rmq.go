@@ -2,10 +2,11 @@ package rabbitmq
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"time"
 
 	"github.com/ipaas-org/image-builder/controller"
+	"github.com/ipaas-org/image-builder/model"
 	"github.com/sirupsen/logrus"
 	"github.com/streadway/amqp"
 )
@@ -18,10 +19,10 @@ type RabbitMQ struct {
 	Delivery      <-chan amqp.Delivery
 	uri           string
 	exchangeQueue string
-	Controller    controller.Builder
+	Controller    *controller.Builder
 }
 
-func NewRabbitMQ(uri, exchangeQueue string, controller controller.Builder, logger *logrus.Logger) *RabbitMQ {
+func NewRabbitMQ(uri, exchangeQueue string, controller *controller.Builder, logger *logrus.Logger) *RabbitMQ {
 	return &RabbitMQ{
 		uri:           uri,
 		l:             logger,
@@ -99,10 +100,64 @@ func (r *RabbitMQ) Consume(ctx context.Context) {
 		case d := <-r.Delivery:
 			r.l.Info("received message from rabbitmq")
 			r.l.Debug(string(d.Body))
-			time.Sleep(1 * time.Second)
+
+			var info model.BuildRequest
+			if err := json.Unmarshal(d.Body, &info); err != nil {
+				r.l.Error("r.Consume.json.Unmarshal(): %w:", err)
+				r.l.Debug(string(d.Body))
+				if err := d.Nack(false, true); err != nil {
+					r.l.Error("r.Consume.Nack(): %w:", err)
+				}
+				continue
+				//TODO: send error to rabbitmq
+			}
+
+			r.l.Debug(info)
+
+			pulledInfo, err := r.Controller.PullRepo(info)
+			if err != nil {
+				r.l.Error("r.Controller.PullRepo():", err)
+				if err := d.Nack(false, true); err != nil {
+					r.l.Error("r.Consume.Nack(): %w:", err)
+				}
+				continue
+			}
+
+			// metadata, err := r.Controller.GetGranularMetadata(info, github.MetaDescription)
+			// if err != nil {
+			// 	r.l.Error("r.Controller.GetGranularMetadata(): %w:", err)
+			// 	if err := d.Nack(false, true); err != nil {
+			// 		r.l.Error("r.Consume.Nack(): %w:", err)
+			// 	}
+			// 	continue
+			// }
+
+			// r.l.Debugf("metadata: %+v", metadata)
+
+			imageID, buildErrorMessage, err := r.Controller.BuildImage(ctx, info, pulledInfo.Path)
+			if err != nil {
+				r.l.Error("r.Controller.BuildImage(): %w:", err)
+				r.l.Error(buildErrorMessage)
+				if err := d.Nack(false, true); err != nil {
+					r.l.Error("r.Consume.Nack(): %w:", err)
+				}
+				continue
+			}
+
+			imageName := r.Controller.GenerateImageName(info.UserID, pulledInfo)
+
+			if err := r.Controller.PushImage(ctx, imageID, imageName); err != nil {
+				r.l.Error("r.Controller.PushImage(): %w:", err)
+				if err := d.Nack(false, true); err != nil {
+					r.l.Error("r.Consume.Nack(): %w:", err)
+				}
+				continue
+			}
+
 			if err := d.Ack(false); err != nil {
 				r.l.Error("r.Consume.Ack(): %w:", err)
 			}
+			r.l.Infof("image %s built and pushed successfully", imageName)
 		}
 	}
 }
