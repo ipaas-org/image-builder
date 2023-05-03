@@ -55,7 +55,7 @@ type (
 
 	Registry struct {
 		Name          string `yaml:"name"`
-		ServerAddress string `yaml:"serverAddress"`
+		ServerAddress string `env-required:"true" yaml:"serverAddress"` //env:"REGISTRY_SERVER_ADDRESS"
 	}
 )
 
