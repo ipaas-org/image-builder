@@ -22,6 +22,9 @@ if you are gonna use vscode make sure to have the dev containers extension insta
 
 ## How to start the service
 
+thanks to the dev container, you don't need to install anything to start the service, just run `make devc` and it will start the service
+**you need to have devcontainers cli installed** (check the section above).
+
 before starting the development make sure you have a valid .env file
 in the config/ folder, you can check how to stucture one in the .env.example file.
 (the default usename and password for rabbitmq are guest:guest)
