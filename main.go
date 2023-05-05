@@ -76,7 +76,7 @@ func main() {
 	c.AddRegistry(r)
 	l.Info("succesfully added docker registry")
 
-	rmq := rabbitmq.NewRabbitMQ(conf.RMQ.URI, conf.RMQ.ExchangeQueue, c, l)
+	rmq := rabbitmq.NewRabbitMQ(conf.RMQ.URI, conf.RMQ.RequestQueue, conf.RMQ.ResponseQueue, c, l)
 
 	if err := rmq.Connect(); err != nil {
 		l.Fatalf("error connecting to rabbitmq: %s", err.Error())
