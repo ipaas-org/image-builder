@@ -30,7 +30,8 @@ type (
 
 	RMQ struct {
 		URI           string `env-required:"true" yaml:"uri" env:"RABBITMQ_URI"`
-		ExchangeQueue string `env-required:"true" yaml:"exchangeQueue" env:"RABBITMQ_EXCHANGE_QUEUE"`
+		RequestQueue  string `env-required:"true" yaml:"requestQueue" env:"RABBITMQ_REQUEST_QUEUE"`
+		ResponseQueue string `env-required:"true" yaml:"responseQueue" env:"RABBITMQ_REPONSE_QUEUE"`
 	}
 
 	Database struct {

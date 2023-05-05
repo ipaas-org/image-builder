@@ -3,7 +3,8 @@ app:
   version: "0.0.1"
 
 rabbitmq:
-  exchangeQueue: test
+  requestQueue: test
+  responseQueue: response-test
 
 logger:
   level: "debug"
