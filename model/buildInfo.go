@@ -2,6 +2,7 @@ package model
 
 type (
 	BuildRequest struct {
+		UUID      string `json:"uuid"` // given by the client
 		Token     string `json:"token"`
 		UserID    string `json:"userID"`
 		Type      string `json:"type"`      // repo, tag, release, ...
