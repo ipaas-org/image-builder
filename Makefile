@@ -60,7 +60,6 @@ down: ### stop all container created by docker-compose
 prep: fmt lint test ### format, lint and test. to use before commit
 .PHONY: prep
 
-.SILENT:
 devc: ### automatically start and  connect to dev container (it works even if the container is already running)
 	OUTPUT=$$(devcontainer up --workspace-folder . );\
 	OUTCOME=$$(echo $$OUTPUT | jq -r .outcome);\
