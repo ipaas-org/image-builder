@@ -1,0 +1,1 @@
+- [ ] add config to set restart retries and delay after each retry in rabbit mq recovery defer
