@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/docker/docker/api/types"
+	registryType "github.com/docker/docker/api/types/registry"
+
 	"github.com/docker/docker/client"
 	"github.com/ipaas-org/image-builder/providers/registry"
 )
@@ -60,7 +62,7 @@ func (r *Registry) TagImage(localImageID, newName string) (string, error) {
 }
 
 func (r *Registry) PushImage(ctx context.Context, imageID string) error {
-	var authConfig = types.AuthConfig{
+	var authConfig = registryType.AuthConfig{
 		Username:      r.username,
 		Password:      r.password,
 		ServerAddress: r.serverAddress,
