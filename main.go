@@ -6,7 +6,9 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"syscall"
+	"time"
 
 	"github.com/ipaas-org/image-builder/config"
 	"github.com/ipaas-org/image-builder/controller"
@@ -16,6 +18,15 @@ import (
 	"github.com/ipaas-org/image-builder/providers/builders/nixpacks"
 	"github.com/ipaas-org/image-builder/providers/connectors/github"
 	"github.com/ipaas-org/image-builder/providers/registry/registry"
+	"github.com/sirupsen/logrus"
+)
+
+const (
+	gracefulShutdownTimeout = 15 * time.Second
+)
+
+const (
+	StartRMQRoutine int = iota + 1
 )
 
 func main() {
@@ -26,6 +37,13 @@ func main() {
 
 	l := logger.NewLogger(conf.Log.Level, conf.Log.Type)
 	l.Debug("initizalized logger")
+
+	defer func(l *logrus.Logger) {
+		if r := recover(); r != nil {
+			l.Errorf("panic: recover: %v", r)
+			l.Errorf("stacktrace from panic: \n%s", string(debug.Stack()))
+		}
+	}(l)
 
 	c := controller.NewBuilderController(l)
 
@@ -78,24 +96,51 @@ func main() {
 
 	rmq := rabbitmq.NewRabbitMQ(conf.RMQ.URI, conf.RMQ.RequestQueue, conf.RMQ.ResponseQueue, c, l)
 
-	if err := rmq.Connect(); err != nil {
-		l.Fatalf("error connecting to rabbitmq: %s", err.Error())
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	// Waiting signal
 	interrupt := make(chan os.Signal, 1)
-	signal.Notify(interrupt, os.Interrupt, syscall.SIGTERM)
+	signal.Notify(interrupt,
+		syscall.SIGINT,
+		syscall.SIGQUIT,
+		syscall.SIGABRT,
+		syscall.SIGTERM)
 
-	go func() {
-		rmq.Consume(ctx)
-	}()
+	var RoutineMonitor = make(chan int, 100)
+	RoutineMonitor <- StartRMQRoutine
 
-	select {
-	case s := <-interrupt:
-		l.Info("app - Run - signal: " + s.String())
-		cancel()
-	case err = <-rmq.Error:
-		l.Error(fmt.Errorf("rabbitmq: %w", err))
+	for {
+		select {
+		case i := <-interrupt:
+			l.Info("main - signal: " + i.String())
+			l.Info("main - canceling context")
+			cancel()
+			gracefulTimer := time.Tick(gracefulShutdownTimeout)
+			select {
+			case <-gracefulTimer:
+				l.Info("main - graceful shutdown timeout reached")
+				os.Exit(1)
+			case <-rmq.Done:
+				l.Info("main - rabbitmq finished")
+			}
+
+			os.Exit(1)
+		case err = <-rmq.Error:
+			l.Error(fmt.Errorf("rabbitmq: %w", err))
+		default:
+		}
+
+		select {
+		case ID := <-RoutineMonitor:
+			l.Infof("Starting Routine: %d", ID)
+			switch ID {
+			case StartRMQRoutine:
+				go rmq.Start(ctx, StartRMQRoutine, RoutineMonitor)
+			default:
+			}
+		default:
+		}
+
+		time.Sleep(10 * time.Millisecond)
 	}
+
 }
