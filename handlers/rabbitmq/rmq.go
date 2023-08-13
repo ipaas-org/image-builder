@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"runtime/debug"
+	"time"
 
 	"github.com/ipaas-org/image-builder/controller"
 	"github.com/ipaas-org/image-builder/model"
@@ -23,15 +25,20 @@ type RabbitMQ struct {
 	requestQueueName  string
 	responseQueueName string
 	Controller        *controller.Builder
+	Done              chan struct{}
+	restarts          int
 }
 
 func NewRabbitMQ(uri, requestQueue, reponseQueue string, controller *controller.Builder, logger *logrus.Logger) *RabbitMQ {
+	doneChan := make(chan struct{})
 	return &RabbitMQ{
 		uri:               uri,
 		l:                 logger,
 		requestQueueName:  requestQueue,
 		responseQueueName: reponseQueue,
 		Controller:        controller,
+		Done:              doneChan,
+		restarts:          0,
 	}
 }
 
@@ -80,7 +87,7 @@ func (r *RabbitMQ) Connect() error {
 	r.Delivery, err = r.Channel.Consume(
 		q.Name, // queue
 		"",     // consumer
-		false,  // auto-ack
+		true,   // auto-ack
 		false,  // exclusive
 		false,  // no-local
 		false,  // no-wait
@@ -105,11 +112,45 @@ func (r *RabbitMQ) Close() error {
 	return nil
 }
 
+func (r *RabbitMQ) Start(ctx context.Context, ID int, routineMonitor chan int) {
+
+	defer func(restarts int) {
+		r.Close()
+		rec := recover()
+		r.l.Debug("recover:", rec)
+		if rec != nil {
+			r.l.Error("rabbitmq routine panic:", rec)
+			r.l.Error(string(debug.Stack()))
+		}
+		if ctx.Err() == nil && restarts <= 5 {
+			if restarts > 0 {
+				time.Sleep(3 * time.Second)
+			}
+			routineMonitor <- ID
+		} else {
+			r.l.Infof("rabbitmq routine [ID=%d] not restarting", ID)
+			r.Done <- struct{}{}
+		}
+	}(r.restarts)
+
+	r.l.Infof("starting rabbitmq routine [ID=%d]", ID)
+	if err := r.Connect(); err != nil {
+		r.l.Error("r.Connect():", err)
+		r.restarts++
+		return
+	}
+
+	r.l.Infof("rabbitmq routine [ID=%d] connected", ID)
+
+	r.Consume(ctx)
+	r.l.Info("rabbitmq done consuming")
+}
+
 func (r *RabbitMQ) Consume(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			r.l.Info("stopping rabbitmq consumer")
+			r.l.Info("stopping rabbitmq consumer, context cancelled")
 			return
 		case err := <-r.Error:
 			r.l.Error(err)
