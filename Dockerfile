@@ -31,7 +31,7 @@ COPY --from=docker /usr/local/bin/docker /usr/local/bin/docker
 COPY --from=docker /usr/local/libexec/docker/cli-plugins/docker-buildx /usr/local/libexec/docker/cli-plugins/docker-buildx
 COPY --from=nixpacks /usr/local/bin/nixpacks /usr/local/bin/nixpacks
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=builder /app/config /config
+COPY --from=builder /app/config.yml /
 COPY --from=builder /bin/app /app
 CMD ["/app"]
 

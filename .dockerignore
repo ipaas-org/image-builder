@@ -1,7 +1,8 @@
 _volume/
-./config/.env
+.env
 node_modules/
 package*
 .env.example
 Makefile
 readme.md
+todo.md

@@ -36,7 +36,7 @@ update: ### update dependencies
 	go get -u -v
 .PHONY: update
 
-build: prep ### build docker image called image-builder
+build: fmt lint ### build docker image called image-builder
 	docker build -t image-builder .
 .PHONY: docker
 
