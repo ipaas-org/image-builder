@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	trasportHttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/ipaas-org/image-builder/providers/connectors"
 	"github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
@@ -89,8 +90,13 @@ func (g GithubConnector) ValidateAndLintUrl(url, token string) (string, error) {
 		}
 	}
 
+	user, repo, err := g.GetUserAndRepo(url, token)
+	if err != nil {
+		return "", err
+	}
 	g.l.Debug(url)
-	request, err := http.NewRequest("GET", url, nil)
+	repoUrl := fmt.Sprintf(baseUrlMetadata, user, repo)
+	request, err := http.NewRequest("GET", repoUrl, nil)
 	if err != nil {
 		return "", err
 	}
@@ -125,11 +131,6 @@ func (g GithubConnector) ValidateAndLintUrl(url, token string) (string, error) {
 
 // GetUserAndRepo get the username of the creator and the repository's name given a GitHub repository url
 func (g GithubConnector) GetUserAndRepo(url, token string) (string, string, error) {
-	url, err := g.ValidateAndLintUrl(url, token)
-	if err != nil {
-		return "", "", err
-	}
-
 	url = strings.TrimSuffix(url, ".git")
 	split := strings.Split(url, "/")
 
@@ -146,7 +147,6 @@ func (g GithubConnector) Pull(userID, branch, url, token string) (string, string
 	}
 
 	//get the name of the repo
-	g.l.Info("getting repo name...")
 	user, repoName, err := g.GetUserAndRepo(url, token)
 	if err != nil {
 		g.l.Errorf("githubConnector.Pull: error getting user and repo: %v", err)
@@ -156,10 +156,10 @@ func (g GithubConnector) Pull(userID, branch, url, token string) (string, string
 	if branch == "" {
 		branch, _, err = g.getBranchAndDescription(user, repoName, token)
 		if err != nil {
+			g.l.Errorf("githubConnector.Pull: error getting branch and description: %v", err)
 			return "", "", "", err
 		}
 	}
-	g.l.Infoln("ok")
 	g.l.Infof("user: %s, repo: %s, branch: %s\n", user, repoName, branch)
 
 	branches, err := g.getBranches(user, repoName, token)
@@ -189,6 +189,10 @@ func (g GithubConnector) Pull(userID, branch, url, token string) (string, string
 		Depth:         1,
 		SingleBranch:  true,
 		ReferenceName: plumbing.ReferenceName("refs/heads/" + branch),
+		Auth: &trasportHttp.BasicAuth{
+			Username: user,
+			Password: token,
+		},
 		// Progress: os.Stdout,
 	})
 	if err != nil {
