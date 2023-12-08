@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"runtime/debug"
-	"time"
 
 	"github.com/ipaas-org/image-builder/controller"
 	"github.com/ipaas-org/image-builder/model"
@@ -15,8 +14,6 @@ import (
 )
 
 type RabbitMQ struct {
-	l                 *logrus.Logger
-	Error             <-chan error
 	Connection        *amqp.Connection
 	Channel           *amqp.Channel
 	ResponseQueue     amqp.Queue
@@ -24,12 +21,15 @@ type RabbitMQ struct {
 	uri               string
 	requestQueueName  string
 	responseQueueName string
-	Controller        *controller.Builder
-	Done              chan struct{}
-	restarts          int
+
+	Controller *controller.Controller
+	l          *logrus.Logger
+
+	Done  chan struct{}
+	Error <-chan error
 }
 
-func NewRabbitMQ(uri, requestQueue, reponseQueue string, controller *controller.Builder, logger *logrus.Logger) *RabbitMQ {
+func NewRabbitMQ(uri, requestQueue, reponseQueue string, controller *controller.Controller, logger *logrus.Logger) *RabbitMQ {
 	doneChan := make(chan struct{})
 	return &RabbitMQ{
 		uri:               uri,
@@ -38,7 +38,6 @@ func NewRabbitMQ(uri, requestQueue, reponseQueue string, controller *controller.
 		responseQueueName: reponseQueue,
 		Controller:        controller,
 		Done:              doneChan,
-		restarts:          0,
 	}
 }
 
@@ -72,7 +71,7 @@ func (r *RabbitMQ) Connect() error {
 		return fmt.Errorf("r.Channel.QueueDeclare: %w", err)
 	}
 
-	q, err := r.Channel.QueueDeclare(
+	requestQueue, err := r.Channel.QueueDeclare(
 		r.requestQueueName, // name
 		true,               // durable
 		false,              // delete when unused
@@ -85,13 +84,13 @@ func (r *RabbitMQ) Connect() error {
 	}
 
 	r.Delivery, err = r.Channel.Consume(
-		q.Name, // queue
-		"",     // consumer
-		true,   // auto-ack
-		false,  // exclusive
-		false,  // no-local
-		false,  // no-wait
-		nil,    // args
+		requestQueue.Name, // queue
+		"",                // consumer
+		false,             // auto-ack
+		false,             // exclusive
+		false,             // no-local
+		false,             // no-wait
+		nil,               // args
 	)
 	if err != nil {
 		return fmt.Errorf("r.Channel.Consume: %w", err)
@@ -113,160 +112,241 @@ func (r *RabbitMQ) Close() error {
 }
 
 func (r *RabbitMQ) Start(ctx context.Context, ID int, routineMonitor chan int) {
-
-	defer func(restarts int) {
-		r.Close()
+	defer func() {
+		if err := r.Close(); err != nil {
+			r.l.Errorf("error closing connection with rmq: %v:", err)
+		}
+		r.l.Info("rabbitmq connection closed")
 		rec := recover()
 		r.l.Debug("recover:", rec)
 		if rec != nil {
 			r.l.Error("rabbitmq routine panic:", rec)
 			r.l.Error(string(debug.Stack()))
 		}
-		if ctx.Err() == nil && restarts <= 5 {
-			if restarts > 0 {
-				time.Sleep(3 * time.Second)
-			}
+		if ctx.Err() == nil {
 			routineMonitor <- ID
 		} else {
 			r.l.Infof("rabbitmq routine [ID=%d] not restarting", ID)
 			r.Done <- struct{}{}
 		}
-	}(r.restarts)
+	}()
 
 	r.l.Infof("starting rabbitmq routine [ID=%d]", ID)
 	if err := r.Connect(); err != nil {
 		r.l.Error("r.Connect():", err)
-		r.restarts++
 		return
 	}
 
 	r.l.Infof("rabbitmq routine [ID=%d] connected", ID)
-
-	r.Consume(ctx)
+	r.consume(ctx)
 	r.l.Info("rabbitmq done consuming")
 }
 
-func (r *RabbitMQ) Consume(ctx context.Context) {
+func (r *RabbitMQ) consume(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
 			r.l.Info("stopping rabbitmq consumer, context cancelled")
 			return
-		case err := <-r.Error:
-			r.l.Error(err)
 		case d := <-r.Delivery:
 			r.l.Info("received message from rabbitmq")
-			r.l.Debug(string(d.Body))
-
-			var response model.BuildResponse
-			var buildErr *model.BuildError
-			response.Status = model.ResponseStatusFailed
-			response.Error = buildErr
-			var info model.BuildRequest
-			if err := json.Unmarshal(d.Body, &info); err != nil {
-				r.l.Error("r.Consume.json.Unmarshal(): %w:", err)
-				r.l.Debug(string(d.Body))
-				if err := d.Nack(false, true); err != nil {
-					r.l.Error("r.Consume.Nack(): %w:", err)
+			r.l.Debugf("received: %q", string(d.Body))
+			// r.l.Debugf("delivery: %+v", d)
+			if d.Body == nil {
+				if err := d.Ack(false); err != nil {
+					r.l.Errorf("r.Consume.Ack(): %v:", err)
+					return
 				}
-				buildErr.Message = err.Error()
-				buildErr.Fault = model.ResponseErrorFaultService
-				r.SendResponse(response)
+				continue
+			}
+
+			info := new(model.BuildRequest)
+			response := new(model.BuildResponse)
+
+			response.Status = model.ResponseStatusFailed
+			response.IsError = true
+
+			if err := json.Unmarshal(d.Body, info); err != nil {
+				r.l.Errorf("r.Consume.json.Unmarshal(): %v:", err)
+				r.l.Debug(string(d.Body))
+				if err := d.Ack(false); err != nil {
+					r.l.Errorf("r.Consume.Ack(): %v:", err)
+					return
+				}
+
+				response.Message = err.Error()
+				response.Fault = model.ResponseErrorFaultUser
+				if err := r.SendResponse(response); err != nil {
+					r.l.Errorf("r.SendResponse(): %v:", err)
+					r.l.Errorf("response: %v", response)
+					return
+				}
 				continue
 			}
 
 			r.l.Debug(info)
 
-			response.UUID = info.UUID
+			shouldBuild, err := r.Controller.ShouldBuild(ctx, info.ApplicationID)
+			if err != nil {
+				r.l.Errorf("r.Controller.ShouldBuild(): %v:", err)
+				if err := d.Nack(false, true); err != nil {
+					r.l.Errorf("r.Consume.Nack(): %v:", err)
+					return
+				}
+
+				response.Message = err.Error()
+				response.Fault = model.ResponseErrorFaultService
+				if err := r.SendResponse(response); err != nil {
+					r.l.Errorf("r.SendResponse(): %v:", err)
+					r.l.Errorf("response: %v", response)
+					return
+				}
+				continue
+			}
+			if !shouldBuild {
+				r.l.Infof("application should not be built, skipping")
+				if err := d.Ack(false); err != nil {
+					r.l.Errorf("r.Consume.Ack(): %v:", err)
+					return
+				}
+				continue
+			}
+
+			if err := r.Controller.UpdateApplicationStateToBuilding(ctx, info.ApplicationID); err != nil {
+				r.l.Errorf("r.Controller.UpdateApplicationStateToBuilding(): %v:", err)
+				if err := d.Nack(false, true); err != nil {
+					r.l.Errorf("r.Consume.Nack(): %v:", err)
+					return
+				}
+
+				response.Message = err.Error()
+				response.Fault = model.ResponseErrorFaultService
+				if err := r.SendResponse(response); err != nil {
+					r.l.Errorf("r.SendResponse(): %v:", err)
+					r.l.Errorf("response: %v", response)
+					return
+				}
+				continue
+			}
+			response.ApplicationID = info.ApplicationID
 			response.Repo = info.Repo
 			pulledInfo, err := r.Controller.PullRepo(info)
 			if err != nil {
-				r.l.Error("r.Controller.PullRepo():", err)
-				if err := d.Nack(false, true); err != nil {
-					r.l.Error("r.Consume.Nack(): %w:", err)
-				}
+				var fault model.ResponseErrorFault
+				switch err {
+				case github.ErrMissingRepoName,
+					github.ErrMissingUsername,
+					github.ErrInvalidUrl,
+					controller.ErrConnectorNotFound,
+					controller.ErrEmptyToken:
+					if err := d.Ack(false); err != nil {
+						return
+					}
+					fault = model.ResponseErrorFaultUser
 
-				buildErr.Message = err.Error()
-				buildErr.Fault = model.ResponseErrorFaultService
-				r.SendResponse(response)
+				default: //in case of rate limit it should be put in a queue that retries after a while, or return an error
+					if err := d.Nack(false, true); err != nil {
+						return
+					}
+					fault = model.ResponseErrorFaultService
+
+				}
+				r.l.Errorf("r.Controller.PullRepo(): %v", err)
+
+				response.Message = err.Error()
+				response.Fault = fault
+				if err := r.SendResponse(response); err != nil {
+					r.l.Errorf("r.SendResponse(): %v:", err)
+					r.l.Errorf("response: %v", response)
+					return
+				}
 				continue
 			}
-			response.LatestCommit = pulledInfo.LastCommit
-
-			metadata, err := r.Controller.GetGranularMetadata(info, github.MetaDescription)
-			if err != nil {
-				r.l.Error("r.Controller.GetGranularMetadata(): %w:", err)
-				if err := d.Nack(false, true); err != nil {
-					r.l.Error("r.Consume.Nack(): %w:", err)
-				}
-
-				buildErr.Message = err.Error()
-				buildErr.Fault = model.ResponseErrorFaultService
-				r.SendResponse(response)
-				continue
-			}
-
-			r.l.Debugf("metadata: %+v", metadata)
-			response.Metadata = metadata
+			response.BuiltCommit = pulledInfo.LastCommit
 
 			imageID, buildErrorMessage, err := r.Controller.BuildImage(ctx, info, pulledInfo.Path)
 			if err != nil {
-				r.l.Error("r.Controller.BuildImage(): %w:", err)
+				r.l.Errorf("r.Controller.BuildImage(): %v:", err)
 				r.l.Error(buildErrorMessage)
-				if err := d.Nack(false, true); err != nil {
-					r.l.Error("r.Consume.Nack(): %w:", err)
-				}
 
 				if buildErrorMessage != "" {
-					buildErr.Message = buildErrorMessage
-					buildErr.Fault = model.ResponseErrorFaultUser
+					response.Message = buildErrorMessage
+					response.Fault = model.ResponseErrorFaultUser
+					if err := d.Ack(false); err != nil {
+						r.l.Errorf("r.Consume.Nack(): %v:", err)
+						return
+					}
 				} else {
-					buildErr.Message = err.Error()
-					buildErr.Fault = model.ResponseErrorFaultService
+					response.Message = err.Error()
+					response.Fault = model.ResponseErrorFaultService
+					if err := d.Nack(false, true); err != nil {
+						r.l.Errorf("r.Consume.Nack(): %v:", err)
+						return
+					}
 				}
-				r.SendResponse(response)
+				if err := r.SendResponse(response); err != nil {
+					r.l.Errorf("r.SendResponse(): %v:", err)
+					r.l.Errorf("response: %v", response)
+					return
+				}
 				continue
 			}
 
 			response.ImageID = imageID
 
-			imageName := r.Controller.GenerateImageName(info.UserID, pulledInfo)
-			response.ImageName = imageName
+			if r.Controller.IsPushRequired() {
+				imageName := r.Controller.GenerateImageName(info.UserID, pulledInfo)
+				response.ImageName = imageName
 
-			if err := r.Controller.PushImage(ctx, imageID, imageName); err != nil {
-				r.l.Error("r.Controller.PushImage(): %w:", err)
-				if err := d.Nack(false, true); err != nil {
-					r.l.Error("r.Consume.Nack(): %w:", err)
+				if err := r.Controller.PushImage(ctx, imageID, imageName); err != nil {
+					r.l.Errorf("r.Controller.PushImage(): %v:", err)
+					if err := d.Nack(false, true); err != nil {
+						r.l.Errorf("r.Consume.Nack(): %v:", err)
+						return
+					}
+
+					response.Message = err.Error()
+					response.Fault = model.ResponseErrorFaultService
+					if err := r.SendResponse(response); err != nil {
+						r.l.Errorf("r.SendResponse(): %v:", err)
+						r.l.Errorf("response: %v", response)
+						return
+					}
+					continue
 				}
-
-				buildErr.Message = err.Error()
-				buildErr.Fault = model.ResponseErrorFaultService
-				r.SendResponse(response)
-				continue
+				r.l.Info("image pushed to regsitry correctly")
+			} else {
+				r.l.Info("pushing image to registry is not required")
 			}
 
 			if err := d.Ack(false); err != nil {
-				r.l.Error("r.Consume.Ack(): %w:", err)
+				r.l.Errorf("r.Consume.Ack(): %v:", err)
+				return
 			}
 
+			r.l.Infof("image %s built successfully", response.ImageID)
 			response.Status = model.ResponseStatusSuccess
-			response.Error = nil
-			r.SendResponse(response)
-
-			r.l.Infof("image %s built and pushed successfully", imageName)
+			response.IsError = false
+			if err := r.SendResponse(response); err != nil {
+				r.l.Errorf("r.SendResponse(): %v:", err)
+				r.l.Errorf("response: %v", response)
+				return
+			}
 		}
 	}
 }
 
-func (r *RabbitMQ) SendResponse(response model.BuildResponse) {
+func (r *RabbitMQ) SendResponse(response *model.BuildResponse) error {
 	r.l.Info("sending response to rabbitmq")
 	r.l.Debug(response)
 
 	body, err := json.Marshal(response)
 	if err != nil {
-		r.l.Error("r.SendResponse.json.Marshal(): %w:", err)
-		return
+		r.l.Errorf("r.SendResponse.json.Marshal(): %v:", err)
+		return err
 	}
+
+	r.l.Debugf("sending response: %q", string(body))
 
 	if err := r.Channel.Publish(
 		"",                  // exchange
@@ -277,8 +357,10 @@ func (r *RabbitMQ) SendResponse(response model.BuildResponse) {
 			ContentType: "application/json",
 			Body:        body,
 		}); err != nil {
-		r.l.Error("r.SendResponse.Channel.Publish(): %w:", err)
+		r.l.Errorf("r.SendResponse.Channel.Publish(): %v:", err)
+		return err
 	}
 
 	r.l.Info("response sent to rabbitmq")
+	return nil
 }
