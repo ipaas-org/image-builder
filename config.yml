@@ -1,0 +1,24 @@
+app:
+  name: "image-builder"
+  version: "0.0.1"
+
+rabbitmq:
+  requestQueue: request-test
+  responseQueue: response-test
+
+logger:
+  level: "debug"
+  type: "text"
+
+database:
+  driver: "mongo"
+
+services:
+  connectors:
+    - name: github
+      downloadDirectory: "./tmp"
+  builders:
+    - name: nixpacks
+  # registries:
+  #   - name: docker
+  #     serverAddress: "localhost:5000"
