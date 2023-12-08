@@ -18,7 +18,10 @@ import (
 	"github.com/ipaas-org/image-builder/providers/builders/nixpacks"
 	"github.com/ipaas-org/image-builder/providers/connectors/github"
 	"github.com/ipaas-org/image-builder/providers/registry/registry"
+	mongoRepo "github.com/ipaas-org/image-builder/repo/mongo"
 	"github.com/sirupsen/logrus"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 const (
@@ -38,6 +41,8 @@ func main() {
 	l := logger.NewLogger(conf.Log.Level, conf.Log.Type)
 	l.Debug("initizalized logger")
 
+	l.Debugf("config: %+v", conf)
+
 	defer func(l *logrus.Logger) {
 		if r := recover(); r != nil {
 			l.Errorf("panic: recover: %v", r)
@@ -45,9 +50,30 @@ func main() {
 		}
 	}(l)
 
-	c := controller.NewBuilderController(l)
+	c := controller.NewController(l)
 
-	l.Info(conf)
+	switch conf.Database.Driver {
+	case "mongo":
+		l.Info("using mongo database")
+
+		l.Debug("connecting to database")
+		ctx, cancel := context.WithTimeout(context.TODO(), 10*time.Second)
+		client, err := mongo.Connect(ctx, options.Client().ApplyURI(conf.Database.URI))
+		if err != nil {
+			l.Fatalf("main - mongo.Connect - error connecting to database: %s", err.Error())
+		}
+		if err := client.Ping(ctx, nil); err != nil {
+			l.Fatalf("main - mongo.Ping - error connecting to database: %s", err.Error())
+		}
+		cancel()
+
+		l.Debug("connecting to application collection")
+		applicationCollection := client.Database("ipaas").Collection("application")
+		applicationRepo := mongoRepo.NewApplicationRepoer(applicationCollection)
+		c.ApplicationRepo = applicationRepo
+	default:
+		l.Fatalf("main - unknown database driver: %s", conf.Database.Driver)
+	}
 
 	if len(conf.Services.Connectors) == 0 {
 		log.Fatal("no connectors specified")
@@ -80,19 +106,25 @@ func main() {
 
 	nix := nixpacks.NewNixPackBuilder(conf.App.Version)
 
-	c.AddBuilder(model.DownloaderNixpacks, nix)
+	c.Builder = nix
 	l.Info("succesfully added nixpacks as builder")
 
-	if conf.Services.Registries[0].Name != model.RegistryDocker {
-		log.Fatal("only docker registry is supported in the app version:", conf.App.Version)
-	}
-	r, err := registry.NewRegistry(conf.Services.Registries[0].ServerAddress, os.Getenv("REGISTRY_DOCKER_USERNAME"), os.Getenv("REGISTRY_DOCKER_PASSWORD"))
-	if err != nil {
-		log.Fatalf("error building docker registry: %v\n", err)
-	}
+	if conf.Services.Registries != nil {
+		if conf.Services.Registries[0].Name != model.RegistryDocker {
+			log.Fatal("only docker registry is supported in the app version:", conf.App.Version)
+		}
 
-	c.AddRegistry(r)
-	l.Info("succesfully added docker registry")
+		r, err := registry.NewRegistry(conf.Services.Registries[0].ServerAddress, os.Getenv("REGISTRY_DOCKER_USERNAME"), os.Getenv("REGISTRY_DOCKER_PASSWORD"))
+		if err != nil {
+			log.Fatalf("error building docker registry: %v\n", err)
+		}
+
+		c.Registry = r
+		l.Info("succesfully added docker registry")
+	} else {
+		c.Registry = nil
+		l.Info("no registry provided, the service will not push the images to any registry")
+	}
 
 	rmq := rabbitmq.NewRabbitMQ(conf.RMQ.URI, conf.RMQ.RequestQueue, conf.RMQ.ResponseQueue, c, l)
 
@@ -123,7 +155,7 @@ func main() {
 				l.Info("main - rabbitmq finished")
 			}
 
-			os.Exit(1)
+			os.Exit(0)
 		case err = <-rmq.Error:
 			l.Error(fmt.Errorf("rabbitmq: %w", err))
 		default:
