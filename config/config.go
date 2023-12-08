@@ -60,18 +60,23 @@ type (
 	}
 )
 
-func NewConfig() (*Config, error) {
-	cfg := &Config{}
+func NewConfig(configPath ...string) (*Config, error) {
+	cfg := new(Config)
 
-	if err := godotenv.Load("./config/.env"); err != nil {
-		if err.Error() != "open ./config/.env: no such file or directory" {
+	path := "./"
+	if len(configPath) > 0 {
+		path = configPath[0]
+	}
+
+	if err := godotenv.Load(path + ".env"); err != nil {
+		if err.Error() != "open "+path+".env: no such file or directory" {
 			return nil, err
 		} else {
 			logrus.Warn(".env file not found, using env variables")
 		}
 	}
 
-	if err := cleanenv.ReadConfig("./config/config.yml", cfg); err != nil {
+	if err := cleanenv.ReadConfig(path+"config.yml", cfg); err != nil {
 		return nil, fmt.Errorf("config error: %w", err)
 	}
 
@@ -79,12 +84,25 @@ func NewConfig() (*Config, error) {
 		return nil, err
 	}
 
-	if os.Getenv("REGISTRY_DOCKER_USERNAME") == "" || os.Getenv("REGISTRY_DOCKER_PASSWORD") == "" {
-		logrus.Warn("REGISTRY_DOCKER_USERNAME or REGISTRY_DOCKER_PASSWORD not set, using anonymous access")
+	if cfg.Services.Registries != nil {
+		if os.Getenv("REGISTRY_DOCKER_USERNAME") == "" || os.Getenv("REGISTRY_DOCKER_PASSWORD") == "" {
+			logrus.Warn("REGISTRY_DOCKER_USERNAME or REGISTRY_DOCKER_PASSWORD not set, using anonymous access")
+		}
 	}
 
-	if os.Getenv("RABBITMQ_URI") == "" {
-		logrus.Fatalln("RABBITMQ_URI not set, this env variable is required")
+	mustCheck := []string{"RABBITMQ_URI"}
+
+	for _, v := range mustCheck {
+		logrus.Debug(os.Getenv(v))
+		if os.Getenv(v) == "" {
+			return nil, fmt.Errorf("%s is not set, this env variable is required", v)
+		}
+	}
+
+	if cfg.Database.Driver != "mock" {
+		if cfg.Database.URI == "" {
+			return nil, fmt.Errorf("DATABASE_URI is not set, this env variable is required when using a non mock driver")
+		}
 	}
 
 	return cfg, nil
