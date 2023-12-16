@@ -63,6 +63,7 @@ func (g GithubConnector) checkPrefix(url string) bool {
 // ValidateAndLintUrl check if an url is a valid and existing GitHub repo url
 func (g GithubConnector) ValidateAndLintUrl(url, token string) (string, error) {
 	//sanitize the url
+	// defer fmt.Println()
 	g.l.Debugf("validating url: %s", url)
 	url = strings.TrimSpace(url)
 	url = strings.ToLower(url)
@@ -72,6 +73,10 @@ func (g GithubConnector) ValidateAndLintUrl(url, token string) (string, error) {
 	}
 
 	urlSplit := strings.Split(url, "/")
+	// g.l.Debugf("url split: %v", urlSplit)
+	if len(urlSplit) != 2 {
+		return "", ErrInvalidUrl
+	}
 	if urlSplit[len(urlSplit)-1] == "" || urlSplit[len(urlSplit)-1] == "github.com" {
 		return "", ErrMissingRepoName
 	}
@@ -80,15 +85,17 @@ func (g GithubConnector) ValidateAndLintUrl(url, token string) (string, error) {
 		return "", ErrMissingUsername
 	}
 
-	//we allow users to not specify the github.com part of the url
-	//so vano2903/ipaas is a valid url
-	if !g.checkPrefix(url) {
-		if strings.HasPrefix(url, "github.com") {
-			url = "https://" + url
-		} else {
-			url = "https://github.com/" + url
-		}
-	}
+	url = "https://github.com/" + url
+
+	// if !g.checkPrefix(url) {
+	// 	if strings.HasPrefix(url, "github.com") {
+	// 		url = "https://" + url
+	// 	} else {
+	// 		url = "https://github.com/" + url
+	// 	}
+	// }
+
+	g.l.Debugf("url after sanitization: %s", url)
 
 	user, repo, err := g.GetUserAndRepo(url, token)
 	if err != nil {
@@ -114,15 +121,16 @@ func (g GithubConnector) ValidateAndLintUrl(url, token string) (string, error) {
 		return "", err
 	}
 	jsonBody := string(body)
+
 	if resp.StatusCode != 200 {
 		if resp.StatusCode == 403 {
-			g.l.Errorf("githubConnector.getReleases: github api rate limit exceeded: %v", jsonBody)
+			g.l.Errorf("githubConnector.ValidateAndLintUrl: github api rate limit exceeded: %v", jsonBody)
 			return "", ErrGithubRateLimit
 		} else if resp.StatusCode == 404 {
 			g.l.Warnf("%s is not a valid url", url)
 			return "", ErrInvalidUrl
 		}
-		g.l.Errorf("githubConnector.getReleases: error getting info for %s [%s]: %v", url, resp.Status, jsonBody)
+		g.l.Errorf("githubConnector.ValidateAndLintUrl: error getting info for %s [%s]: %v", url, resp.Status, jsonBody)
 		return "", fmt.Errorf("error getting info for %s [%s]: %v", url, resp.Status, jsonBody)
 	}
 
@@ -133,7 +141,9 @@ func (g GithubConnector) ValidateAndLintUrl(url, token string) (string, error) {
 func (g GithubConnector) GetUserAndRepo(url, token string) (string, string, error) {
 	url = strings.TrimSuffix(url, ".git")
 	split := strings.Split(url, "/")
-
+	if len(split) < 2 {
+		return "", "", fmt.Errorf("invalid url: %s", url)
+	}
 	return split[len(split)-2], split[len(split)-1], nil
 }
 

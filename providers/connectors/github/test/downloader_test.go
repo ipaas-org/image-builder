@@ -3,7 +3,6 @@ package downloader
 import (
 	"log"
 	"os"
-	"sync"
 	"testing"
 
 	"github.com/ipaas-org/image-builder/pkg/logger"
@@ -108,15 +107,15 @@ func TestPullRepo(t *testing.T) {
 func TestValidUrl(t *testing.T) {
 	t.Run("valid url", func(t *testing.T) {
 		validUrls := []string{
-			"https://github.com/vano2903/ipaas",
-			"http://github.com/vano2903/ipaas",
-			"github.com/vano2903/ipaas",
 			"vano2903/ipaas",
-			"/vano2903/ipaas",
-			"github.com//vano2903/ipaas",
 		}
 
 		invalidUrls := []string{
+			"/vano2903/ipaas",
+			"github.com//vano2903/ipaas",
+			"https://github.com/vano2903/ipaas",
+			"http://github.com/vano2903/ipaas",
+			"github.com/vano2903/ipaas",
 			"https://github.it/vano2903/ipaas",
 			"http://github.it/vano2903/ipaas",
 			"github/vano2903/ipaas",
@@ -137,28 +136,28 @@ func TestValidUrl(t *testing.T) {
 
 		g := NewGithubConnector()
 
-		wg := sync.WaitGroup{}
+		// wg := sync.WaitGroup{}
 		for _, url := range validUrls {
-			wg.Add(1)
-			go func(wg *sync.WaitGroup, url string) {
-				defer wg.Done()
-				_, err := g.ValidateAndLintUrl(url, token)
-				if err != nil {
-					t.Errorf("url %s should be valid but was recognized as invalid: %s", url, err.Error())
-				}
-			}(&wg, url)
+			// wg.Add(1)
+			// go func(wg *sync.WaitGroup, url string) {
+			// 	defer wg.Done()
+			_, err := g.ValidateAndLintUrl(url, token)
+			if err != nil {
+				t.Errorf("url %s should be valid but was recognized as invalid: %s", url, err.Error())
+			}
+			// }(&wg, url)
 		}
 
 		for _, url := range invalidUrls {
-			wg.Add(1)
-			go func(wg *sync.WaitGroup, url string) {
-				defer wg.Done()
-				_, err := g.ValidateAndLintUrl(url, token)
-				if err == nil {
-					t.Errorf("url %s should be invalid but was recognized as valid", url)
-				}
-			}(&wg, url)
+			// wg.Add(1)
+			// go func(wg *sync.WaitGroup, url string) {
+			// defer wg.Done()
+			_, err := g.ValidateAndLintUrl(url, token)
+			if err == nil {
+				t.Errorf("url %s should be invalid but was recognized as valid", url)
+			}
+			// }(&wg, url)
 		}
-		wg.Wait()
+		// wg.Wait()
 	})
 }
