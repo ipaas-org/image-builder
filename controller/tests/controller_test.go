@@ -12,7 +12,6 @@ import (
 	"github.com/ipaas-org/image-builder/pkg/logger"
 	"github.com/ipaas-org/image-builder/providers/builders/nixpacks"
 	"github.com/ipaas-org/image-builder/providers/connectors/github"
-	"github.com/ipaas-org/image-builder/providers/registry/registry"
 	"github.com/joho/godotenv"
 	"github.com/sirupsen/logrus"
 	"gotest.tools/assert"
@@ -45,16 +44,16 @@ func setup() {
 	nix := nixpacks.NewNixPackBuilder("testing")
 	c.Builder = nix
 
-	r, err := registry.NewRegistry("localhost:5000", "", "")
-	if err != nil {
-		log.Fatal(err)
-	}
+	// r, err := registry.NewRegistry("localhost:5000", "", "")
+	// if err != nil {
+	// 	log.Fatal(err)
+	// }
 
-	c.Registry = r
+	// c.Registry = r
 	c.Registry = nil
 	// c.AddRegistry(r)
 
-	if err := godotenv.Load("../../.env"); err != nil {
+	if err := godotenv.Load(".env"); err != nil {
 		log.Fatal("unable to load .env file:", err.Error())
 	}
 	var found bool
@@ -81,7 +80,7 @@ func TestPullRepo(t *testing.T) {
 		setup()
 		imageBuildInfo := &model.BuildRequest{
 			Token:     token,
-			Repo:      "https://github.com/vano2903/testing",
+			Repo:      "vano2903/testing",
 			Branch:    "", //will default
 			UserID:    "18008",
 			Connector: model.ConnectorGithub,
@@ -107,7 +106,7 @@ func TestPullRepo(t *testing.T) {
 		setup()
 		imageBuildInfo := &model.BuildRequest{
 			Token:     token,
-			Repo:      "https://github.com/vano2903/dea-landing",
+			Repo:      "vano2903/dea-landing",
 			Branch:    "",
 			UserID:    "18008",
 			Connector: model.ConnectorGithub,
@@ -133,7 +132,7 @@ func TestPullRepo(t *testing.T) {
 		setup()
 		imageBuildInfo := &model.BuildRequest{
 			Token:     token,
-			Repo:      "https://github.com/vano2903/testing",
+			Repo:      "vano2903/testing",
 			Branch:    "runtime-error",
 			UserID:    "18008",
 			Connector: model.ConnectorGithub,
@@ -159,7 +158,7 @@ func TestPullRepo(t *testing.T) {
 		setup()
 		imageBuildInfo := &model.BuildRequest{
 			Token:     token,
-			Repo:      "https://github.com/vano2903/unexisting",
+			Repo:      "vano2903/unexisting",
 			Branch:    "master",
 			UserID:    "18008",
 			Connector: model.ConnectorGithub,
@@ -180,7 +179,7 @@ func TestPullRepo(t *testing.T) {
 		setup()
 		imageBuildInfo := &model.BuildRequest{
 			Token:     token,
-			Repo:      "https://github.com/vano2903/testing",
+			Repo:      "vano2903/testing",
 			Branch:    "unexisting-branch",
 			UserID:    "18008",
 			Connector: model.ConnectorGithub,
@@ -201,7 +200,7 @@ func TestPullRepo(t *testing.T) {
 		setup()
 		imageBuildInfo := &model.BuildRequest{
 			Token:     token,
-			Repo:      "https://github.com/vano2903/testing",
+			Repo:      "vano2903/testing",
 			Branch:    "unexisting-branch",
 			UserID:    "18008",
 			Connector: model.ConnectorGithub,
@@ -222,7 +221,7 @@ func TestPullRepo(t *testing.T) {
 	// 	setup()
 	// 	imageBuildInfo := model.BuildRequest{
 	// 		Token:     token,
-	// 		Repo:      "https://github.com/vano2903/ipaas",
+	// 		Repo:      "vano2903/ipaas",
 	// 		Branch:    "non-relational-version",
 	// 		UserID:    "18008",
 	// 		Connector: model.ConnectorGithub,
@@ -260,7 +259,7 @@ func TestPullRepo(t *testing.T) {
 	// 	setup()
 	// 	imageBuildInfo := model.BuildRequest{
 	// 		Token:     token,
-	// 		Repo:      "https://github.com/vano2903/ipaas",
+	// 		Repo:      "vano2903/ipaas",
 	// 		Branch:    "non-relational-version",
 	// 		UserID:    "18008",
 	// 		Connector: model.ConnectorGithub,
@@ -301,7 +300,7 @@ func TestBuildImage(t *testing.T) {
 		setup()
 		imageBuildInfo := &model.BuildRequest{
 			Token:     token,
-			Repo:      "https://github.com/vano2903/testing",
+			Repo:      "vano2903/testing",
 			Branch:    "master",
 			UserID:    "18008",
 			Connector: model.ConnectorGithub,
@@ -330,7 +329,7 @@ func TestBuildImage(t *testing.T) {
 		setup()
 		imageBuildInfo := &model.BuildRequest{
 			Token:     token,
-			Repo:      "https://github.com/vano2903/testing",
+			Repo:      "vano2903/testing",
 			Branch:    "non-working-version",
 			UserID:    "18008",
 			Connector: model.ConnectorGithub,
@@ -359,7 +358,7 @@ func TestBuildImage(t *testing.T) {
 		setup()
 		imageBuildInfo := &model.BuildRequest{
 			Token:     token,
-			Repo:      "https://github.com/vano2903/testing",
+			Repo:      "vano2903/testing",
 			Branch:    "master",
 			UserID:    "18008",
 			Connector: model.ConnectorGithub,
@@ -402,7 +401,7 @@ func TestPushImage(t *testing.T) {
 		setup()
 		imageBuildInfo := &model.BuildRequest{
 			Token:     token,
-			Repo:      "https://github.com/vano2903/testing",
+			Repo:      "vano2903/testing",
 			Branch:    "", //will default
 			UserID:    "18008",
 			Connector: model.ConnectorGithub,
@@ -436,7 +435,7 @@ func TestPushImage(t *testing.T) {
 		setup()
 		imageBuildInfo := &model.BuildRequest{
 			Token:     token,
-			Repo:      "https://github.com/vano2903/testing",
+			Repo:      "vano2903/testing",
 			Branch:    "", //will default
 			UserID:    "18008",
 			Connector: model.ConnectorGithub,
