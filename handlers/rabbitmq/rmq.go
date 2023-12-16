@@ -243,7 +243,22 @@ func (r *RabbitMQ) consume(ctx context.Context) {
 						return
 					}
 					fault = model.ResponseErrorFaultUser
+					if err := r.Controller.UpdateApplicationStateToFailed(ctx, info.ApplicationID); err != nil {
+						r.l.Errorf("r.Controller.UpdateApplicationStateToFailed(): %v:", err)
+						if err := d.Nack(false, true); err != nil {
+							r.l.Errorf("r.Consume.Nack(): %v:", err)
+							return
+						}
 
+						response.Message = err.Error()
+						response.Fault = model.ResponseErrorFaultService
+						if err := r.SendResponse(response); err != nil {
+							r.l.Errorf("r.SendResponse(): %v:", err)
+							r.l.Errorf("response: %v", response)
+							return
+						}
+						continue
+					}
 				default: //in case of rate limit it should be put in a queue that retries after a while, or return an error
 					if err := d.Nack(false, true); err != nil {
 						return
@@ -275,6 +290,22 @@ func (r *RabbitMQ) consume(ctx context.Context) {
 					if err := d.Ack(false); err != nil {
 						r.l.Errorf("r.Consume.Nack(): %v:", err)
 						return
+					}
+					if err := r.Controller.UpdateApplicationStateToFailed(ctx, info.ApplicationID); err != nil {
+						r.l.Errorf("r.Controller.UpdateApplicationStateToFailed(): %v:", err)
+						if err := d.Nack(false, true); err != nil {
+							r.l.Errorf("r.Consume.Nack(): %v:", err)
+							return
+						}
+
+						response.Message = err.Error()
+						response.Fault = model.ResponseErrorFaultService
+						if err := r.SendResponse(response); err != nil {
+							r.l.Errorf("r.SendResponse(): %v:", err)
+							r.l.Errorf("response: %v", response)
+							return
+						}
+						continue
 					}
 				} else {
 					response.Message = err.Error()
