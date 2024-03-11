@@ -17,6 +17,7 @@ import (
 	"github.com/ipaas-org/image-builder/pkg/logger"
 	"github.com/ipaas-org/image-builder/providers/builders/nixpacks"
 	"github.com/ipaas-org/image-builder/providers/connectors/github"
+	"github.com/ipaas-org/image-builder/providers/registry/harbor"
 	"github.com/ipaas-org/image-builder/providers/registry/registry"
 	mongoRepo "github.com/ipaas-org/image-builder/repo/mongo"
 	"github.com/sirupsen/logrus"
@@ -110,20 +111,25 @@ func main() {
 	l.Info("succesfully added nixpacks as builder")
 
 	if conf.Services.Registries != nil {
-		if conf.Services.Registries[0].Name != model.RegistryDocker {
-			log.Fatal("only docker registry is supported in the app version:", conf.App.Version)
+		switch conf.Services.Registries[0].Name {
+		case model.RegistryDocker:
+			r, err := registry.NewDefaultRegistry(conf.Services.Registries[0].ServerAddress, os.Getenv("REGISTRY_USERNAME"), os.Getenv("REGISTRY_PASSWORD"))
+			if err != nil {
+				log.Fatalf("error building docker registry: %v\n", err)
+			}
+			c.Registry = r
+			l.Info("succesfully added docker registry")
+		case model.RegistryHarbor:
+			r, err := harbor.NewHarborRegistry(conf.Services.Registries[0].ServerAddress, os.Getenv("REGISTRY_USERNAME"), os.Getenv("REGISTRY_PASSWORD"), os.Getenv("REGISTRY_PULL_USERNAME"), os.Getenv("REGISTRY_PULL_PASSWORD"))
+			if err != nil {
+				log.Fatalf("error building harbor registry: %v\n", err)
+			}
+			c.Registry = r
+			l.Info("succesfully added harbor registry")
 		}
-
-		r, err := registry.NewRegistry(conf.Services.Registries[0].ServerAddress, os.Getenv("REGISTRY_DOCKER_USERNAME"), os.Getenv("REGISTRY_DOCKER_PASSWORD"))
-		if err != nil {
-			log.Fatalf("error building docker registry: %v\n", err)
-		}
-
-		c.Registry = r
-		l.Info("succesfully added docker registry")
 	} else {
 		c.Registry = nil
-		l.Info("no registry provided, the service will not push the images to any registry")
+		l.Warn("no registry provided, the service will not push the images to any registry")
 	}
 
 	rmq := rabbitmq.NewRabbitMQ(conf.RMQ.URI, conf.RMQ.RequestQueue, conf.RMQ.ResponseQueue, c, l)
@@ -171,8 +177,6 @@ func main() {
 			}
 		default:
 		}
-
 		time.Sleep(10 * time.Millisecond)
 	}
-
 }
