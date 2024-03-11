@@ -44,26 +44,26 @@ func (b *Controller) BuildImage(ctx context.Context, info *model.BuildRequest, p
 
 func (b *Controller) GenerateImageName(userID string, info *model.PulledRepoInfo) string {
 	repo := strings.Split(info.Path, "/")[len(strings.Split(info.Path, "/"))-1]
-	return fmt.Sprintf("%s/%s:%s", userID, repo, info.LastCommit)
+	return fmt.Sprintf("%s/%s:%s", "applications", repo, info.LastCommit)
 }
 
-func (b *Controller) PushImage(ctx context.Context, imageID, newImageName string) error {
+func (b *Controller) PushImage(ctx context.Context, imageID, username, appName string) (string, error) {
 	if b.Registry == nil {
-		return ErrMissingRegistry
+		return "", ErrMissingRegistry
 	}
-
+	newImageName := fmt.Sprintf("%s/%s", username, appName)
 	b.l.Infof("pushing image %s as %s", imageID, newImageName)
-	toPush, err := b.Registry.TagImage(imageID, newImageName)
+	toPush, err := b.Registry.TagImage(ctx, imageID, username, appName)
 	if err != nil {
 		b.l.Errorf("error tagging image %s as %s: %v", imageID, newImageName, err)
-		return err
+		return "", err
 	}
 
 	if err := b.Registry.PushImage(ctx, toPush); err != nil {
 		b.l.Errorf("error pushing image %s: %v", toPush, err)
-		return err
+		return "", err
 	}
-	return nil
+	return toPush, nil
 }
 
 func (b *Controller) IsPushRequired() bool {

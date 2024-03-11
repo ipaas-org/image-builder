@@ -326,10 +326,9 @@ func (r *RabbitMQ) consume(ctx context.Context) {
 			response.ImageID = imageID
 
 			if r.Controller.IsPushRequired() {
-				imageName := r.Controller.GenerateImageName(info.UserID, pulledInfo)
-				response.ImageName = imageName
-
-				if err := r.Controller.PushImage(ctx, imageID, imageName); err != nil {
+				appName := info.ApplicationID + ":" + response.BuiltCommit
+				response.ImageName, err = r.Controller.PushImage(ctx, imageID, info.UserID, appName)
+				if err != nil {
 					r.l.Errorf("r.Controller.PushImage(): %v:", err)
 					if err := d.Nack(false, true); err != nil {
 						r.l.Errorf("r.Consume.Nack(): %v:", err)
