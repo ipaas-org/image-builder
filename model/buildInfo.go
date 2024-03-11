@@ -32,4 +32,5 @@ const (
 	DownloaderNixpacks = "nixpacks"
 
 	RegistryDocker = "docker"
+	RegistryHarbor = "harbor"
 )
