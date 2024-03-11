@@ -19,6 +19,6 @@ services:
       downloadDirectory: "./tmp"
   builders:
     - name: nixpacks
-  # registries:
-  #   - name: docker
-  #     serverAddress: "localhost:5000"
+  registries:
+    - name: harbor
+      serverAddress: "registry.cargoway.cloud"

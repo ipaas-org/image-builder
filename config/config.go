@@ -84,11 +84,11 @@ func NewConfig(configPath ...string) (*Config, error) {
 		return nil, err
 	}
 
-	if cfg.Services.Registries != nil {
-		if os.Getenv("REGISTRY_DOCKER_USERNAME") == "" || os.Getenv("REGISTRY_DOCKER_PASSWORD") == "" {
-			logrus.Warn("REGISTRY_DOCKER_USERNAME or REGISTRY_DOCKER_PASSWORD not set, using anonymous access")
-		}
-	}
+	// if cfg.Services.Registries != nil {
+	// 	if os.Getenv("REGISTRY_DOCKER_USERNAME") == "" || os.Getenv("REGISTRY_DOCKER_PASSWORD") == "" {
+	// 		logrus.Warn("REGISTRY_DOCKER_USERNAME or REGISTRY_DOCKER_PASSWORD not set, using anonymous access")
+	// 	}
+	// }
 
 	mustCheck := []string{"RABBITMQ_URI"}
 
