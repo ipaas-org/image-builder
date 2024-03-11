@@ -11,9 +11,9 @@ import (
 
 	"github.com/docker/docker/api/types"
 	registryType "github.com/docker/docker/api/types/registry"
+	"github.com/ipaas-org/image-builder/providers/registry"
 
 	"github.com/docker/docker/client"
-	"github.com/ipaas-org/image-builder/providers/registry"
 )
 
 var _ registry.Registryer = new(Registry)
@@ -36,7 +36,7 @@ type Registry struct {
 }
 
 // if no authentication is required, leave username and password empty
-func NewRegistry(registryUri, username, password string) (*Registry, error) {
+func NewDefaultRegistry(registryUri, username, password string) (*Registry, error) {
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		return nil, err
@@ -50,11 +50,11 @@ func NewRegistry(registryUri, username, password string) (*Registry, error) {
 	}, nil
 }
 
-func (r *Registry) TagImage(localImageID, newName string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*3)
+func (r *Registry) TagImage(ctx context.Context, localImageID, userCode, appName string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, time.Minute*3)
 	defer cancel()
 
-	new := r.serverAddress + "/" + newName //
+	new := r.serverAddress + "/" + userCode + "/" + appName //
 	if err := r.dockerClient.ImageTag(ctx, localImageID, new); err != nil {
 		return "", err
 	}
