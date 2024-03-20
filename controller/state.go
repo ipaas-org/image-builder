@@ -2,7 +2,6 @@ package controller
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/ipaas-org/image-builder/model"
 	"github.com/ipaas-org/image-builder/repo"
@@ -11,15 +10,16 @@ import (
 
 func (c *Controller) ShouldBuild(ctx context.Context, applicationID string) (bool, error) {
 	c.l.Println("ShouldBuild")
-	c.l.Printf("applicattionID: %q\n", applicationID)
+	c.l.Printf("applicationID: %q\n", applicationID)
 	appID, err := primitive.ObjectIDFromHex(applicationID)
 	if err != nil {
-		fmt.Println("invalid applicationID")
+		c.l.Errorf("invalid applicationID")
 		return false, err
 	}
 
 	state, err := c.ApplicationRepo.GetStateByID(ctx, appID)
 	if err != nil {
+		c.l.Errorf("error getting application state: %v", err)
 		if err == repo.ErrNotFound {
 			return false, nil
 		} else {
