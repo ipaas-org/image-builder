@@ -11,7 +11,9 @@ type (
 		IsError       bool               `json:"isError"`
 		Fault         ResponseErrorFault `json:"fault"` // service | user
 		Message       string             `json:"message"`
-		// Metadata     map[connectors.MetaType][]string
+		BuildOutput   string             `json:"buildOutput"`
+		PlanUsed      *BuildConfig       `json:"buildPlan"`
+		RepoAnalisys  *RepoAnalisys      `json:"repoAnalysis"`
 	}
 )
 
