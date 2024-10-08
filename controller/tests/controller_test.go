@@ -10,6 +10,7 @@ import (
 	"github.com/ipaas-org/image-builder/controller"
 	"github.com/ipaas-org/image-builder/model"
 	"github.com/ipaas-org/image-builder/pkg/logger"
+	"github.com/ipaas-org/image-builder/providers/builders/docker"
 	"github.com/ipaas-org/image-builder/providers/builders/nixpacks"
 	"github.com/ipaas-org/image-builder/providers/connectors/github"
 	"github.com/joho/godotenv"
@@ -41,8 +42,13 @@ func setup() {
 	githubConnector := github.NewGithubConnector(tmpFolder, userAgent, l)
 	c.AddConnector(model.ConnectorGithub, githubConnector)
 
-	nix := nixpacks.NewNixPackBuilder("testing")
-	c.Builder = nix
+	nixBuilder := nixpacks.NewNixPackBuilder("testing-nixpacks")
+	dockerBuilder, err := docker.NewDockerBuilder("testing-docker")
+	if err != nil {
+		log.Fatal("unable to create docker builder", err)
+	}
+	c.AddBuilder(nixpacks.NixPackBuilderKind, nixBuilder)
+	c.AddBuilder(docker.DockerBuilderKind, dockerBuilder)
 
 	// r, err := registry.NewRegistry("localhost:5000", "", "")
 	// if err != nil {
@@ -71,6 +77,7 @@ func setup() {
 // [x] pull unexisting branch
 // [x] pull repo with invalid token
 func TestPullRepo(t *testing.T) {
+	ctx := context.Background()
 	t.Run("pull repo", func(t *testing.T) {
 		if _, err := os.Stat(tmpFolder); os.IsNotExist(err) {
 			if err := os.Mkdir(tmpFolder, 0755); err != nil {
@@ -78,7 +85,7 @@ func TestPullRepo(t *testing.T) {
 			}
 		}
 		setup()
-		imageBuildInfo := &model.BuildRequest{
+		pullInfo := &model.PullInfoRequest{
 			Token:     token,
 			Repo:      "vano2903/testing",
 			Branch:    "", //will default
@@ -87,9 +94,9 @@ func TestPullRepo(t *testing.T) {
 		}
 		expectedName := "testing"
 		expectedPath := tmpFolder + "/18008-testing-master"
-		info, err := c.PullRepo(imageBuildInfo)
+		info, err := c.PullRepo(ctx, pullInfo)
 		if err != nil {
-			t.Errorf("unable to pull repo: %v", err)
+			t.Fatalf("unable to pull repo: %v", err)
 		}
 
 		t.Logf("info: %v", info)
@@ -104,7 +111,7 @@ func TestPullRepo(t *testing.T) {
 			}
 		}
 		setup()
-		imageBuildInfo := &model.BuildRequest{
+		pullInfo := &model.PullInfoRequest{
 			Token:     token,
 			Repo:      "vano2903/dea-landing",
 			Branch:    "",
@@ -113,7 +120,7 @@ func TestPullRepo(t *testing.T) {
 		}
 		expectedName := "dea-landing"
 		expectedPath := tmpFolder + "/18008-dea-landing-master"
-		info, err := c.PullRepo(imageBuildInfo)
+		info, err := c.PullRepo(ctx, pullInfo)
 		if err != nil {
 			t.Errorf("unable to pull repo: %v", err)
 		}
@@ -130,7 +137,7 @@ func TestPullRepo(t *testing.T) {
 			}
 		}
 		setup()
-		imageBuildInfo := &model.BuildRequest{
+		pullInfo := &model.PullInfoRequest{
 			Token:     token,
 			Repo:      "vano2903/testing",
 			Branch:    "runtime-error",
@@ -139,7 +146,7 @@ func TestPullRepo(t *testing.T) {
 		}
 		expectedName := "testing"
 		expectedPath := tmpFolder + "/18008-testing-runtime-error"
-		info, err := c.PullRepo(imageBuildInfo)
+		info, err := c.PullRepo(ctx, pullInfo)
 		if err != nil {
 			t.Errorf("unable to pull repo: %v", err)
 		}
@@ -156,7 +163,7 @@ func TestPullRepo(t *testing.T) {
 			}
 		}
 		setup()
-		imageBuildInfo := &model.BuildRequest{
+		pullInfo := &model.PullInfoRequest{
 			Token:     token,
 			Repo:      "vano2903/unexisting",
 			Branch:    "master",
@@ -164,7 +171,7 @@ func TestPullRepo(t *testing.T) {
 			Connector: model.ConnectorGithub,
 		}
 
-		_, err := c.PullRepo(imageBuildInfo)
+		_, err := c.PullRepo(ctx, pullInfo)
 		if err == nil {
 			t.Errorf("expected error, got nil")
 		}
@@ -177,7 +184,7 @@ func TestPullRepo(t *testing.T) {
 			}
 		}
 		setup()
-		imageBuildInfo := &model.BuildRequest{
+		pullInfo := &model.PullInfoRequest{
 			Token:     token,
 			Repo:      "vano2903/testing",
 			Branch:    "unexisting-branch",
@@ -185,7 +192,7 @@ func TestPullRepo(t *testing.T) {
 			Connector: model.ConnectorGithub,
 		}
 
-		_, err := c.PullRepo(imageBuildInfo)
+		_, err := c.PullRepo(ctx, pullInfo)
 		if err == nil {
 			t.Errorf("expected error, got nil")
 		}
@@ -198,7 +205,7 @@ func TestPullRepo(t *testing.T) {
 			}
 		}
 		setup()
-		imageBuildInfo := &model.BuildRequest{
+		pullInfo := &model.PullInfoRequest{
 			Token:     token,
 			Repo:      "vano2903/testing",
 			Branch:    "unexisting-branch",
@@ -206,7 +213,7 @@ func TestPullRepo(t *testing.T) {
 			Connector: model.ConnectorGithub,
 		}
 
-		_, err := c.PullRepo(imageBuildInfo)
+		_, err := c.PullRepo(ctx, pullInfo)
 		if err == nil {
 			t.Errorf("expected error, got nil")
 		}
@@ -291,6 +298,7 @@ func TestPullRepo(t *testing.T) {
 // [x] detect build error
 // [x] cancel build with context
 func TestBuildImage(t *testing.T) {
+	ctx := context.Background()
 	t.Run("build image", func(t *testing.T) {
 		if _, err := os.Stat(tmpFolder); os.IsNotExist(err) {
 			if err := os.Mkdir(tmpFolder, 0755); err != nil {
@@ -298,20 +306,26 @@ func TestBuildImage(t *testing.T) {
 			}
 		}
 		setup()
-		imageBuildInfo := &model.BuildRequest{
-			Token:     token,
-			Repo:      "vano2903/testing",
-			Branch:    "master",
-			UserID:    "18008",
-			Connector: model.ConnectorGithub,
+		buildRequest := &model.Request{
+			ApplicationID: "test-build-image",
+			PullInfo: &model.PullInfoRequest{
+				Token:     token,
+				Repo:      "vano2903/testing",
+				Branch:    "master",
+				UserID:    "18008",
+				Connector: model.ConnectorGithub,
+			},
+			BuildPlan: &model.BuildConfig{
+				Builder: "nixpacks",
+			},
 		}
 
-		info, err := c.PullRepo(imageBuildInfo)
+		info, err := c.PullRepo(ctx, buildRequest.PullInfo)
 		if err != nil {
 			t.Errorf("unable to pull repo: %v", err)
 		}
 
-		imageID, _, err := c.BuildImage(context.Background(), imageBuildInfo, info.Path)
+		imageID, _, err := c.BuildImage(context.Background(), buildRequest.PullInfo.Repo, buildRequest.PullInfo.UserID, info.Path, buildRequest.BuildPlan)
 		if err != nil {
 			t.Errorf("unable to build image: %v", err)
 		}
@@ -327,20 +341,27 @@ func TestBuildImage(t *testing.T) {
 		}
 
 		setup()
-		imageBuildInfo := &model.BuildRequest{
-			Token:     token,
-			Repo:      "vano2903/testing",
-			Branch:    "non-working-version",
-			UserID:    "18008",
-			Connector: model.ConnectorGithub,
+
+		buildRequest := &model.Request{
+			ApplicationID: "test-build-image",
+			PullInfo: &model.PullInfoRequest{
+				Token:     token,
+				Repo:      "vano2903/testing",
+				Branch:    "non-working-version",
+				UserID:    "18008",
+				Connector: model.ConnectorGithub,
+			},
+			BuildPlan: &model.BuildConfig{
+				Builder: "nixpacks",
+			},
 		}
 
-		info, err := c.PullRepo(imageBuildInfo)
+		info, err := c.PullRepo(ctx, buildRequest.PullInfo)
 		if err != nil {
 			t.Errorf("unable to pull repo: %v", err)
 		}
 
-		_, buildError, err := c.BuildImage(context.Background(), imageBuildInfo, info.Path)
+		_, buildError, err := c.BuildImage(context.Background(), buildRequest.PullInfo.Repo, buildRequest.PullInfo.UserID, info.Path, buildRequest.BuildPlan)
 		if err == nil {
 			t.Errorf("expected error, got nil")
 		}
@@ -356,28 +377,28 @@ func TestBuildImage(t *testing.T) {
 		}
 
 		setup()
-		imageBuildInfo := &model.BuildRequest{
-			Token:     token,
-			Repo:      "vano2903/testing",
-			Branch:    "master",
-			UserID:    "18008",
-			Connector: model.ConnectorGithub,
+		buildRequest := &model.Request{
+			ApplicationID: "test-build-image",
+			PullInfo: &model.PullInfoRequest{
+				Token:     token,
+				Repo:      "vano2903/testing",
+				Branch:    "master",
+				UserID:    "18008",
+				Connector: model.ConnectorGithub,
+			},
+			BuildPlan: &model.BuildConfig{
+				Builder: "nixpacks",
+			},
 		}
 
-		info, err := c.PullRepo(imageBuildInfo)
+		info, err := c.PullRepo(ctx, buildRequest.PullInfo)
 		if err != nil {
 			t.Errorf("unable to pull repo: %v", err)
 		}
 
-		ctx, cancel := context.WithCancel(context.Background())
+		ctx, _ := context.WithTimeout(context.Background(), 100*time.Millisecond)
 
-		go func() {
-			time.Sleep(100 * time.Millisecond)
-			l.Info("canceling context")
-			cancel()
-		}()
-
-		_, _, err = c.BuildImage(ctx, imageBuildInfo, info.Path)
+		_, _, err = c.BuildImage(ctx, buildRequest.PullInfo.Repo, buildRequest.PullInfo.UserID, info.Path, buildRequest.BuildPlan)
 		if err == nil {
 			t.Errorf("expected error, got nil")
 		}
@@ -392,6 +413,7 @@ func TestBuildImage(t *testing.T) {
 // [x] push image
 // [x] detect push error
 func TestPushImage(t *testing.T) {
+	ctx := context.Background()
 	t.Run("push image", func(t *testing.T) {
 		if _, err := os.Stat(tmpFolder); os.IsNotExist(err) {
 			if err := os.Mkdir(tmpFolder, 0755); err != nil {
@@ -399,19 +421,25 @@ func TestPushImage(t *testing.T) {
 			}
 		}
 		setup()
-		imageBuildInfo := &model.BuildRequest{
-			Token:     token,
-			Repo:      "vano2903/testing",
-			Branch:    "", //will default
-			UserID:    "18008",
-			Connector: model.ConnectorGithub,
+		buildRequest := &model.Request{
+			ApplicationID: "test-build-image",
+			PullInfo: &model.PullInfoRequest{
+				Token:     token,
+				Repo:      "vano2903/testing",
+				Branch:    "", //will default
+				UserID:    "18008",
+				Connector: model.ConnectorGithub,
+			},
+			BuildPlan: &model.BuildConfig{
+				Builder: "nixpacks",
+			},
 		}
-		info, err := c.PullRepo(imageBuildInfo)
+		info, err := c.PullRepo(ctx, buildRequest.PullInfo)
 		if err != nil {
 			t.Fatalf("unable to pull repo: %v", err)
 		}
 
-		imageID, _, err := c.BuildImage(context.Background(), imageBuildInfo, info.Path)
+		imageID, _, err := c.BuildImage(ctx, buildRequest.PullInfo.Repo, buildRequest.PullInfo.UserID, info.Path, buildRequest.BuildPlan)
 		if err != nil {
 			t.Fatalf("unable to build image: %v", err)
 		}
@@ -433,19 +461,25 @@ func TestPushImage(t *testing.T) {
 			}
 		}
 		setup()
-		imageBuildInfo := &model.BuildRequest{
-			Token:     token,
-			Repo:      "vano2903/testing",
-			Branch:    "", //will default
-			UserID:    "18008",
-			Connector: model.ConnectorGithub,
+		buildRequest := &model.Request{
+			ApplicationID: "test-build-image",
+			PullInfo: &model.PullInfoRequest{
+				Token:     token,
+				Repo:      "vano2903/testing",
+				Branch:    "", //will default
+				UserID:    "18008",
+				Connector: model.ConnectorGithub,
+			},
+			BuildPlan: &model.BuildConfig{
+				Builder: "nixpacks",
+			},
 		}
-		info, err := c.PullRepo(imageBuildInfo)
+		info, err := c.PullRepo(ctx, buildRequest.PullInfo)
 		if err != nil {
 			t.Fatalf("unable to pull repo: %v", err)
 		}
 
-		imageID, _, err := c.BuildImage(context.Background(), imageBuildInfo, info.Path)
+		imageID, _, err := c.BuildImage(ctx, buildRequest.PullInfo.Repo, buildRequest.PullInfo.UserID, info.Path, buildRequest.BuildPlan)
 		if err != nil {
 			t.Fatalf("unable to build image: %v", err)
 		}
