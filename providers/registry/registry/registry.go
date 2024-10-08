@@ -9,7 +9,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/image"
 	registryType "github.com/docker/docker/api/types/registry"
 	"github.com/ipaas-org/image-builder/providers/registry"
 
@@ -70,7 +70,7 @@ func (r *Registry) PushImage(ctx context.Context, imageID string) error {
 	authConfigBytes, _ := json.Marshal(authConfig)
 	authConfigEncoded := base64.URLEncoding.EncodeToString(authConfigBytes)
 
-	opts := types.ImagePushOptions{RegistryAuth: authConfigEncoded}
+	opts := image.PushOptions{RegistryAuth: authConfigEncoded}
 	rd, err := r.dockerClient.ImagePush(ctx, imageID, opts)
 	if err != nil {
 		return err
