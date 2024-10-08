@@ -4,9 +4,12 @@ import (
 	"context"
 	"time"
 
+	"github.com/ipaas-org/image-builder/model"
 	"github.com/ipaas-org/image-builder/providers/builders"
 	nixpacks "github.com/vano2903/nixpacks-go"
 )
+
+const NixPackBuilderKind model.BuilderKind = "nixpacks"
 
 var _ builders.Builder = new(NixPackBuilder)
 
@@ -20,14 +23,41 @@ func NewNixPackBuilder(builderVersion string) *NixPackBuilder {
 	}
 }
 
-func (b NixPackBuilder) Plan(ctx context.Context, path string) (string, error) {
+func convertBuildConfigEnvsToNixpacksEnvs(envs []model.KeyValue) []nixpacks.Env {
+	nixpacksEnvs := make([]nixpacks.Env, 0)
+	for _, env := range envs {
+		nixpacksEnvs = append(nixpacksEnvs, nixpacks.Env{
+			Key:   env.Key,
+			Value: env.Value,
+		})
+	}
+	return nixpacksEnvs
+}
+
+func (b NixPackBuilder) Plan(ctx context.Context, config *model.BuildConfig, path string) (builders.Plan, error) {
 	n, err := nixpacks.NewNixpacks()
 	if err != nil {
 		return "", err
 	}
-	planCmd, err := n.Plan(ctx, nixpacks.PlanOptions{Path: path})
-	if err != nil {
-		return "", err
+
+	opt := nixpacks.PlanOptions{
+		Path: path,
+		Envs: convertBuildConfigEnvsToNixpacksEnvs(config.Envs),
+
+		Config: config.NixpacksPath,
+
+		NixPackages: config.NixPkgs,
+		// NixLibraries: config.NixLibs,
+		AptPackages: config.AptPkgs,
+
+		InstallCommand: config.InstallCommand,
+		BuildCommand:   config.BuildCommand,
+		StartCommand:   config.StartCommand,
+	}
+
+	planCmd := n.Plan(ctx, opt)
+	if planCmd.Error() != nil {
+		return "", planCmd.Error()
 	}
 
 	plan, err := planCmd.Result()
@@ -35,14 +65,14 @@ func (b NixPackBuilder) Plan(ctx context.Context, path string) (string, error) {
 		return "", err
 	}
 
-	return string(plan.Response), nil
+	return builders.Plan(plan.Response), nil
 }
 
-// first string is the image name, second is an error message if there was an error building the image
-func (b NixPackBuilder) Build(ctx context.Context, userID, repo, config, path string) (string, string, error) {
+// first string is the image name, second is build output
+func (b NixPackBuilder) Build(ctx context.Context, userID, repo, path string, plan builders.Plan) (string, []byte, error) {
 	n, err := nixpacks.NewNixpacks()
 	if err != nil {
-		return "", "", err
+		return "", nil, err
 	}
 
 	buildCmd, err := n.Build(ctx, nixpacks.BuildOptions{
@@ -53,7 +83,7 @@ func (b NixPackBuilder) Build(ctx context.Context, userID, repo, config, path st
 			},
 			{
 				Key:   "org.ipaas.image-builder.builder",
-				Value: "nixpacks",
+				Value: string(NixPackBuilderKind),
 			},
 			{
 				Key:   "application.repo",
@@ -68,12 +98,12 @@ func (b NixPackBuilder) Build(ctx context.Context, userID, repo, config, path st
 			},
 		},
 		Path:     path,
-		JsonPlan: config,
+		JsonPlan: string(plan),
 	})
 	if err != nil {
-		return "", "", err
+		return "", nil, err
 	}
 
 	build, err := buildCmd.Result()
-	return build.ImageName, build.BuildError, err
+	return build.ImageName, build.Response, err
 }
