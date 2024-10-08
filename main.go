@@ -15,6 +15,8 @@ import (
 	"github.com/ipaas-org/image-builder/handlers/rabbitmq"
 	"github.com/ipaas-org/image-builder/model"
 	"github.com/ipaas-org/image-builder/pkg/logger"
+	"github.com/ipaas-org/image-builder/providers/analyzers/baseAnalyzer"
+	"github.com/ipaas-org/image-builder/providers/builders/docker"
 	"github.com/ipaas-org/image-builder/providers/builders/nixpacks"
 	"github.com/ipaas-org/image-builder/providers/connectors/github"
 	"github.com/ipaas-org/image-builder/providers/registry/harbor"
@@ -105,10 +107,24 @@ func main() {
 		log.Fatal("only nixpacks builder is supported in the app version:", conf.App.Version)
 	}
 
-	nix := nixpacks.NewNixPackBuilder(conf.App.Version)
+	nixpacksBuilder := nixpacks.NewNixPackBuilder(conf.App.Version)
 
-	c.Builder = nix
+	c.AddBuilder(nixpacks.NixPackBuilderKind, nixpacksBuilder)
 	l.Info("succesfully added nixpacks as builder")
+
+	dockerBuilder, err := docker.NewDockerBuilder(conf.App.Version)
+	if err != nil {
+		log.Fatalf("error creating docker builder: %v", err)
+	}
+	c.AddBuilder(docker.DockerBuilderKind, dockerBuilder)
+	l.Info("succesfully added docker as builder")
+
+	baseAnalyzer, err := baseAnalyzer.NewBaseAnalyzer()
+	if err != nil {
+		log.Fatalf("error creating base analyzer: %v", err)
+	}
+	c.Analyzer = baseAnalyzer
+	l.Info("succesfully added base analyzer")
 
 	if conf.Services.Registries != nil {
 		switch conf.Services.Registries[0].Name {
@@ -177,6 +193,6 @@ func main() {
 			}
 		default:
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(50 * time.Millisecond)
 	}
 }
