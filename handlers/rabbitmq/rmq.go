@@ -8,6 +8,7 @@ import (
 
 	"github.com/ipaas-org/image-builder/controller"
 	"github.com/ipaas-org/image-builder/model"
+	"github.com/ipaas-org/image-builder/providers/builders"
 	"github.com/ipaas-org/image-builder/providers/connectors/github"
 	"github.com/sirupsen/logrus"
 	"github.com/streadway/amqp"
@@ -160,7 +161,7 @@ func (r *RabbitMQ) consume(ctx context.Context) {
 				continue
 			}
 
-			info := new(model.BuildRequest)
+			info := new(model.Request)
 			response := new(model.BuildResponse)
 
 			response.Status = model.ResponseStatusFailed
@@ -169,16 +170,8 @@ func (r *RabbitMQ) consume(ctx context.Context) {
 			if err := json.Unmarshal(d.Body, info); err != nil {
 				r.l.Errorf("r.Consume.json.Unmarshal(): %v:", err)
 				r.l.Debug(string(d.Body))
-				if err := d.Ack(false); err != nil {
-					r.l.Errorf("r.Consume.Ack(): %v:", err)
-					return
-				}
-
-				response.Message = err.Error()
-				response.Fault = model.ResponseErrorFaultUser
-				if err := r.SendResponse(response); err != nil {
-					r.l.Errorf("r.SendResponse(): %v:", err)
-					r.l.Errorf("response: %v", response)
+				err := r.sendResponseWithFault(d, model.ResponseErrorFaultUser, response, "invalid request")
+				if err != nil {
 					return
 				}
 				continue
@@ -189,16 +182,8 @@ func (r *RabbitMQ) consume(ctx context.Context) {
 			shouldBuild, err := r.Controller.ShouldBuild(ctx, info.ApplicationID)
 			if err != nil {
 				r.l.Errorf("r.Controller.ShouldBuild(): %v:", err)
-				if err := d.Nack(false, true); err != nil {
-					r.l.Errorf("r.Consume.Nack(): %v:", err)
-					return
-				}
-
-				response.Message = err.Error()
-				response.Fault = model.ResponseErrorFaultService
-				if err := r.SendResponse(response); err != nil {
-					r.l.Errorf("r.SendResponse(): %v:", err)
-					r.l.Errorf("response: %v", response)
+				err := r.sendResponseWithFault(d, model.ResponseErrorFaultService, response, err.Error())
+				if err != nil {
 					return
 				}
 				continue
@@ -214,23 +199,15 @@ func (r *RabbitMQ) consume(ctx context.Context) {
 
 			if err := r.Controller.UpdateApplicationStateToBuilding(ctx, info.ApplicationID); err != nil {
 				r.l.Errorf("r.Controller.UpdateApplicationStateToBuilding(): %v:", err)
-				if err := d.Nack(false, true); err != nil {
-					r.l.Errorf("r.Consume.Nack(): %v:", err)
-					return
-				}
-
-				response.Message = err.Error()
-				response.Fault = model.ResponseErrorFaultService
-				if err := r.SendResponse(response); err != nil {
-					r.l.Errorf("r.SendResponse(): %v:", err)
-					r.l.Errorf("response: %v", response)
+				err := r.sendResponseWithFault(d, model.ResponseErrorFaultService, response, err.Error())
+				if err != nil {
 					return
 				}
 				continue
 			}
 			response.ApplicationID = info.ApplicationID
-			response.Repo = info.Repo
-			pulledInfo, err := r.Controller.PullRepo(info)
+			response.Repo = info.PullInfo.Repo
+			pulledInfo, err := r.Controller.PullRepo(ctx, info.PullInfo)
 			if err != nil {
 				var fault model.ResponseErrorFault
 				switch err {
@@ -239,85 +216,104 @@ func (r *RabbitMQ) consume(ctx context.Context) {
 					github.ErrInvalidUrl,
 					controller.ErrConnectorNotFound,
 					controller.ErrEmptyToken:
-					if err := d.Ack(false); err != nil {
-						return
-					}
 					fault = model.ResponseErrorFaultUser
 					if err := r.Controller.UpdateApplicationStateToFailed(ctx, info.ApplicationID); err != nil {
-						r.l.Errorf("r.Controller.UpdateApplicationStateToFailed(): %v:", err)
-						if err := d.Nack(false, true); err != nil {
-							r.l.Errorf("r.Consume.Nack(): %v:", err)
-							return
-						}
-
-						response.Message = err.Error()
-						response.Fault = model.ResponseErrorFaultService
-						if err := r.SendResponse(response); err != nil {
-							r.l.Errorf("r.SendResponse(): %v:", err)
-							r.l.Errorf("response: %v", response)
+						err := r.sendResponseWithFault(d, model.ResponseErrorFaultService, response, err.Error())
+						if err != nil {
 							return
 						}
 						continue
 					}
 				default: //in case of rate limit it should be put in a queue that retries after a while, or return an error
-					if err := d.Nack(false, true); err != nil {
-						return
-					}
 					fault = model.ResponseErrorFaultService
-
 				}
 				r.l.Errorf("r.Controller.PullRepo(): %v", err)
-
-				response.Message = err.Error()
-				response.Fault = fault
-				if err := r.SendResponse(response); err != nil {
-					r.l.Errorf("r.SendResponse(): %v:", err)
-					r.l.Errorf("response: %v", response)
+				err := r.sendResponseWithFault(d, fault, response, err.Error())
+				if err != nil {
 					return
 				}
 				continue
 			}
-			response.BuiltCommit = pulledInfo.LastCommit
 
-			imageID, buildErrorMessage, err := r.Controller.BuildImage(ctx, info, pulledInfo.Path)
+			response.BuiltCommit = pulledInfo.PulledCommit
+			r.l.Infof("repo %s pulled successfully", response.Repo)
+
+			repoAnalysis, err := r.Controller.AnalyzeRepositoryContent(ctx, pulledInfo.Path, info.BuildPlan.RootDirectory, info.PullInfo.Repo, info.PullInfo.Branch)
 			if err != nil {
-				r.l.Errorf("r.Controller.BuildImage(): %v:", err)
-				r.l.Error(buildErrorMessage)
+				r.l.Errorf("error analyzing repository content: %v", err)
+				err := r.sendResponseWithFault(d, model.ResponseErrorFaultService, response, err.Error())
+				if err != nil {
+					return
+				}
+				continue
+			}
+			response.RepoAnalisys = repoAnalysis
+			r.l.Infof("repo %s analyzed", response.Repo)
 
-				if buildErrorMessage != "" {
-					response.Message = buildErrorMessage
-					response.Fault = model.ResponseErrorFaultUser
-					if err := d.Ack(false); err != nil {
-						r.l.Errorf("r.Consume.Nack(): %v:", err)
+			if !repoAnalysis.IsBuildable {
+				r.l.Infof("repo %s is not buildable: %s", response.Repo, repoAnalysis.Reason)
+				err := r.sendResponseWithFault(d, model.ResponseErrorFaultUser, response, repoAnalysis.Reason)
+				if err != nil {
+					return
+				}
+				continue
+			}
+
+			if info.BuildPlan.Builder == "" {
+				r.l.Info("no build plan specified, generating one")
+
+				config, err := r.Controller.GenerateBuildConfig(ctx, repoAnalysis)
+				if err != nil {
+					r.l.Errorf("r.Controller.GenerateBuildConfig(): %v:", err)
+					err := r.sendResponseWithFault(d, model.ResponseErrorFaultService, response, err.Error())
+					if err != nil {
 						return
 					}
+					continue
+				}
+
+				info.BuildPlan = config
+			}
+
+			imageID, buildOutput, err := r.Controller.BuildImage(ctx, info.PullInfo.Repo, info.PullInfo.UserID, pulledInfo.Path, info.BuildPlan)
+			response.BuildOutput = string(buildOutput)
+			response.PlanUsed = info.BuildPlan
+			if err != nil {
+				r.l.Errorf("r.Controller.BuildImage(): %v:", err)
+				r.l.Error(buildOutput)
+
+				if buildOutput != nil {
 					if err := r.Controller.UpdateApplicationStateToFailed(ctx, info.ApplicationID); err != nil {
 						r.l.Errorf("r.Controller.UpdateApplicationStateToFailed(): %v:", err)
-						if err := d.Nack(false, true); err != nil {
-							r.l.Errorf("r.Consume.Nack(): %v:", err)
-							return
-						}
-
-						response.Message = err.Error()
-						response.Fault = model.ResponseErrorFaultService
-						if err := r.SendResponse(response); err != nil {
-							r.l.Errorf("r.SendResponse(): %v:", err)
-							r.l.Errorf("response: %v", response)
+						err := r.sendResponseWithFault(d, model.ResponseErrorFaultService, response, err.Error())
+						if err != nil {
 							return
 						}
 						continue
 					}
-				} else {
-					response.Message = err.Error()
-					response.Fault = model.ResponseErrorFaultService
-					if err := d.Nack(false, true); err != nil {
-						r.l.Errorf("r.Consume.Nack(): %v:", err)
+					err := r.sendResponseWithFault(d, model.ResponseErrorFaultUser, response, "fail to build image")
+					if err != nil {
 						return
 					}
+					continue
 				}
-				if err := r.SendResponse(response); err != nil {
-					r.l.Errorf("r.SendResponse(): %v:", err)
-					r.l.Errorf("response: %v", response)
+
+				response.Fault = model.ResponseErrorFaultUser
+				switch err {
+				case builders.ErrMissingConfig:
+					response.Message = "unable to find specified config file"
+				case builders.ErrInvalidConfig:
+					response.Message = "invalid config file"
+				case controller.ErrBuilderNotFound:
+					response.Message = "builder not found"
+				case controller.ErrInexistingRootDir:
+					response.Message = "provided root directory is inexistent"
+				default:
+					response.Fault = model.ResponseErrorFaultService
+					response.Message = err.Error()
+				}
+				err := r.sendResponseWithFault(d, response.Fault, response, response.Message)
+				if err != nil {
 					return
 				}
 				continue
@@ -327,19 +323,11 @@ func (r *RabbitMQ) consume(ctx context.Context) {
 
 			if r.Controller.IsPushRequired() {
 				appName := info.ApplicationID + ":" + response.BuiltCommit
-				response.ImageName, err = r.Controller.PushImage(ctx, imageID, info.UserID, appName)
+				response.ImageName, err = r.Controller.PushImage(ctx, imageID, info.PullInfo.UserID, appName)
 				if err != nil {
 					r.l.Errorf("r.Controller.PushImage(): %v:", err)
-					if err := d.Nack(false, true); err != nil {
-						r.l.Errorf("r.Consume.Nack(): %v:", err)
-						return
-					}
-
-					response.Message = err.Error()
-					response.Fault = model.ResponseErrorFaultService
-					if err := r.SendResponse(response); err != nil {
-						r.l.Errorf("r.SendResponse(): %v:", err)
-						r.l.Errorf("response: %v", response)
+					err := r.sendResponseWithFault(d, model.ResponseErrorFaultService, response, err.Error())
+					if err != nil {
 						return
 					}
 					continue
@@ -357,7 +345,7 @@ func (r *RabbitMQ) consume(ctx context.Context) {
 			r.l.Infof("image %s built successfully", response.ImageID)
 			response.Status = model.ResponseStatusSuccess
 			response.IsError = false
-			if err := r.SendResponse(response); err != nil {
+			if err := r.sendResponse(response); err != nil {
 				r.l.Errorf("r.SendResponse(): %v:", err)
 				r.l.Errorf("response: %v", response)
 				return
@@ -366,7 +354,30 @@ func (r *RabbitMQ) consume(ctx context.Context) {
 	}
 }
 
-func (r *RabbitMQ) SendResponse(response *model.BuildResponse) error {
+func (r *RabbitMQ) sendResponseWithFault(d amqp.Delivery, fault model.ResponseErrorFault, response *model.BuildResponse, message string) error {
+	if fault == model.ResponseErrorFaultService {
+		if err := d.Nack(false, true); err != nil {
+			r.l.Errorf("r.Consume.Nack(): %v:", err)
+			return err
+		}
+	} else {
+		if err := d.Ack(false); err != nil {
+			r.l.Errorf("r.Consume.Ack(): %v:", err)
+			return err
+		}
+	}
+
+	response.Message = message
+	response.Fault = fault
+	if err := r.sendResponse(response); err != nil {
+		r.l.Errorf("r.SendResponse(): %v:", err)
+		r.l.Errorf("response: %v", response)
+		return err
+	}
+	return nil
+}
+
+func (r *RabbitMQ) sendResponse(response *model.BuildResponse) error {
 	r.l.Info("sending response to rabbitmq")
 	r.l.Debug(response)
 
