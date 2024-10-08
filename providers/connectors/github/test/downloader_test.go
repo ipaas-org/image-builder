@@ -1,6 +1,7 @@
 package downloader
 
 import (
+	"context"
 	"log"
 	"os"
 	"testing"
@@ -30,6 +31,7 @@ func NewGithubConnector() *github.GithubConnector {
 }
 
 func TestPullRepo(t *testing.T) {
+	ctx := context.Background()
 	t.Run("pull repo", func(t *testing.T) {
 		//create downloadTmp if not exists
 		if _, err := os.Stat(downloadTmp); os.IsNotExist(err) {
@@ -38,11 +40,11 @@ func TestPullRepo(t *testing.T) {
 			}
 		}
 		g := NewGithubConnector()
-		path, _, _, err := g.Pull("18008", "", "vano2903/testing", token)
+		pull, err := g.Pull(ctx, "18008", "", "vano2903/testing", "latest", token)
 		if err != nil {
 			t.Fatal(err)
 		}
-		t.Log(path)
+		t.Log(pull)
 	})
 
 	t.Run("pull repo with non default branch", func(t *testing.T) {
@@ -52,7 +54,7 @@ func TestPullRepo(t *testing.T) {
 			}
 		}
 		g := NewGithubConnector()
-		_, _, _, err := g.Pull("18008", "env-with-db-connection", "vano2903/testing", token)
+		_, err := g.Pull(ctx, "18008", "env-with-db-connection", "vano2903/testing", "", token)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -66,7 +68,7 @@ func TestPullRepo(t *testing.T) {
 		}
 
 		g := NewGithubConnector()
-		_, _, _, err := g.Pull("18008", "", "vano2903/unexisting", token)
+		_, err := g.Pull(ctx, "18008", "", "vano2903/unexisting", "", token)
 		if err == nil {
 			t.Fatal("should have returned an error")
 		}
@@ -79,7 +81,7 @@ func TestPullRepo(t *testing.T) {
 			}
 		}
 		g := NewGithubConnector()
-		_, _, _, err := g.Pull("18008", "unexisting-branch", "vano2903/testing", token)
+		_, err := g.Pull(ctx, "18008", "unexisting-branch", "vano2903/testing", "", token)
 		if err == nil {
 			t.Fatal(err)
 		}
@@ -92,7 +94,7 @@ func TestPullRepo(t *testing.T) {
 			}
 		}
 		g := NewGithubConnector()
-		_, _, _, err := g.Pull("18008", "", "vano2903/testing", "invalid-token")
+		_, err := g.Pull(ctx, "18008", "", "vano2903/testing", "", "invalid-token")
 		if err == nil {
 			t.Fatal("should have returned an error")
 		}
@@ -105,6 +107,7 @@ func TestPullRepo(t *testing.T) {
 }
 
 func TestValidUrl(t *testing.T) {
+	ctx := context.Background()
 	t.Run("valid url", func(t *testing.T) {
 		validUrls := []string{
 			"vano2903/ipaas",
@@ -141,7 +144,7 @@ func TestValidUrl(t *testing.T) {
 			// wg.Add(1)
 			// go func(wg *sync.WaitGroup, url string) {
 			// 	defer wg.Done()
-			_, err := g.ValidateAndLintUrl(url, token)
+			_, err := g.ValidateAndLintUrl(ctx, url, token)
 			if err != nil {
 				t.Errorf("url %s should be valid but was recognized as invalid: %s", url, err.Error())
 			}
@@ -152,7 +155,7 @@ func TestValidUrl(t *testing.T) {
 			// wg.Add(1)
 			// go func(wg *sync.WaitGroup, url string) {
 			// defer wg.Done()
-			_, err := g.ValidateAndLintUrl(url, token)
+			_, err := g.ValidateAndLintUrl(ctx, url, token)
 			if err == nil {
 				t.Errorf("url %s should be invalid but was recognized as valid", url)
 			}
